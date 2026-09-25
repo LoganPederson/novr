@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -51,7 +52,7 @@ public sealed class MainWindow : Window
 
         root.Children.Add(new TextBlock
         {
-            Text = "Install, update, repair, or remove NOVR. BepInEx 5 will be installed automatically if needed.",
+            Text = "Install, update, repair, or remove NOVR and its companion mods. BepInEx 5 is installed automatically if needed, and every download is checked against its published SHA-256 before anything is installed.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.85
         });
@@ -110,6 +111,14 @@ public sealed class MainWindow : Window
         };
         progress.Bind(ProgressBar.IsVisibleProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IsBusy)));
         root.Children.Add(progress);
+
+        var messageLog = new CheckBox
+        {
+            Content = "Also install Message Log (chat and kill history, weapons in the kill feed)"
+        };
+        messageLog.Bind(ToggleButton.IsCheckedProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IncludeMessageLog)) { Mode = Avalonia.Data.BindingMode.TwoWay });
+        messageLog.Bind(IsEnabledProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IsBusy)) { Converter = Avalonia.Data.Converters.BoolConverters.Not });
+        root.Children.Add(messageLog);
 
         root.Children.Add(BuildInstallActions());
         root.Children.Add(BuildInstalledActions());

@@ -1,16 +1,16 @@
-using System.IO.Compression;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
+using NOVR.Installer.Models;
 
 namespace NOVR.Installer.Services;
 
 public sealed class GitHubReleaseClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int MaxChecksumFileBytes = 64 * 1024;
 
     private readonly HttpClient _httpClient;
-    
-    public ReleaseVersion FoundNOVRRelease { get; private set; } = (ReleaseVersion)"0.0.0";
 
     public GitHubReleaseClient()
     {
@@ -19,38 +19,79 @@ public sealed class GitHubReleaseClient
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
     }
 
-    public async Task<string> DownloadLatestNovrReleaseAsync(string tempDir, IProgress<string> progress, CancellationToken cancellationToken)
+    // Downloads the component's latest release zip and checks it against the SHA256SUMS.txt published with that
+    // release. Throws, leaving nothing installed, if the checksum file or entry is missing or the hash differs.
+    public async Task<(string ZipPath, ReleaseVersion Version)> DownloadVerifiedReleaseAsync(
+        ModComponent component, string tempDir, IProgress<string> progress, CancellationToken cancellationToken)
     {
-        progress.Report("Checking latest NOVR release...");
-        var release = await GetLatestReleaseAsync(InstallerConstants.GitHubOwner, InstallerConstants.GitHubRepo, cancellationToken);
-        FoundNOVRRelease = (ReleaseVersion)release.TagName;
-        var asset = release.Assets.FirstOrDefault(asset =>
-            asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
-            !asset.Name.Contains("bepinex", StringComparison.OrdinalIgnoreCase));
+        progress.Report($"Checking latest {component.Name} release...");
+        var release = await GetLatestReleaseAsync(component.Owner, component.Repo, cancellationToken);
+        var version = (ReleaseVersion)release.TagName.TrimStart('v');
 
-        if (asset is null)
-        {
-            throw new InvalidOperationException("Latest NOVR release does not contain a ZIP asset.");
-        }
+        var zipAsset = release.Assets.FirstOrDefault(asset => asset.Name == component.ZipAssetName)
+                       ?? throw new InvalidOperationException($"{component.Name} {release.TagName} has no {component.ZipAssetName}.");
+        var checksumAsset = release.Assets.FirstOrDefault(asset => asset.Name == InstallerConstants.ChecksumAssetName)
+                            ?? throw new InvalidOperationException(
+                                $"{component.Name} {release.TagName} has no {InstallerConstants.ChecksumAssetName}, so its download can't be verified.");
 
-        return await DownloadAssetAsync(asset, tempDir, progress, release.TagName, cancellationToken);
+        var expected = await ReadExpectedHashAsync(checksumAsset, component.ZipAssetName, cancellationToken)
+                       ?? throw new InvalidOperationException(
+                           $"{InstallerConstants.ChecksumAssetName} for {component.Name} {release.TagName} has no entry for {component.ZipAssetName}.");
+
+        progress.Report($"Downloading {component.Name} {version}...");
+        var zipPath = await DownloadAsync(zipAsset.BrowserDownloadUrl, tempDir, component.ZipAssetName, cancellationToken);
+        VerifySha256(zipPath, expected, $"{component.Name} {version}");
+        return (zipPath, version);
     }
 
-    public async Task<string> DownloadLatestBepInEx5Async(string tempDir, IProgress<string> progress, CancellationToken cancellationToken)
+    // BepInEx is pinned: fixed URL, and a hash built into the installer.
+    public async Task<string> DownloadPinnedBepInExAsync(string tempDir, IProgress<string> progress, CancellationToken cancellationToken)
     {
-        progress.Report("Checking latest BepInEx 5 release...");
-        var release = await GetLatestBepInEx5ReleaseAsync(cancellationToken);
-        var asset = release.Assets.FirstOrDefault(asset =>
-            asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
-            asset.Name.Contains("BepInEx", StringComparison.OrdinalIgnoreCase) &&
-            asset.Name.Contains("win_x64", StringComparison.OrdinalIgnoreCase));
+        progress.Report($"Downloading BepInEx {InstallerConstants.BepInExVersion}...");
+        var zipPath = await DownloadAsync(InstallerConstants.BepInExDownloadUrl, tempDir, InstallerConstants.BepInExAssetName, cancellationToken);
+        VerifySha256(zipPath, InstallerConstants.BepInExSha256, $"BepInEx {InstallerConstants.BepInExVersion}");
+        return zipPath;
+    }
 
-        if (asset is null)
+    private static void VerifySha256(string path, string expectedHex, string what)
+    {
+        string actual;
+        using (var stream = File.OpenRead(path))
+            actual = Convert.ToHexString(SHA256.HashData(stream));
+
+        if (!string.Equals(actual, expectedHex, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Latest BepInEx 5 release does not contain a Windows x64 ZIP asset.");
+            File.Delete(path);
+            throw new InvalidOperationException(
+                $"The download of {what} failed verification (SHA-256 mismatch) and was discarded. Nothing was installed.");
+        }
+    }
+
+    private async Task<string?> ReadExpectedHashAsync(GitHubAsset checksumAsset, string fileName, CancellationToken cancellationToken)
+    {
+        if (checksumAsset.Size > MaxChecksumFileBytes)
+            throw new InvalidOperationException($"{InstallerConstants.ChecksumAssetName} is unexpectedly large.");
+
+        var text = await _httpClient.GetStringAsync(checksumAsset.BrowserDownloadUrl, cancellationToken);
+        return ParseChecksumFile(text, fileName);
+    }
+
+    // Format: one "<64 hex chars>  <file name>" per line (sha256sum style; a leading '*' on the name is allowed).
+    internal static string? ParseChecksumFile(string text, string fileName)
+    {
+        foreach (var rawLine in text.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            var separator = line.IndexOf(' ');
+            if (separator != 64) continue;
+
+            var hash = line[..64];
+            var name = line[64..].Trim().TrimStart('*');
+            if (name == fileName && hash.All(Uri.IsHexDigit))
+                return hash;
         }
 
-        return await DownloadAssetAsync(asset, tempDir, progress, release.TagName, cancellationToken);
+        return null;
     }
 
     private async Task<GitHubRelease> GetLatestReleaseAsync(string owner, string repo, CancellationToken cancellationToken)
@@ -61,22 +102,13 @@ public sealed class GitHubReleaseClient
         return release ?? throw new InvalidOperationException($"Could not read latest release for {owner}/{repo}.");
     }
 
-    private async Task<GitHubRelease> GetLatestBepInEx5ReleaseAsync(CancellationToken cancellationToken)
-    {
-        var url = $"https://api.github.com/repos/{InstallerConstants.BepInExOwner}/{InstallerConstants.BepInExRepo}/releases?per_page=30";
-        await using var stream = await _httpClient.GetStreamAsync(url, cancellationToken);
-        var releases = await JsonSerializer.DeserializeAsync<GitHubRelease[]>(stream, JsonOptions, cancellationToken);
-        var release = releases?.FirstOrDefault(release => release.TagName.StartsWith("v5.", StringComparison.OrdinalIgnoreCase));
-        return release ?? throw new InvalidOperationException("Could not find a BepInEx 5 release.");
-    }
-
-    private async Task<string> DownloadAssetAsync(GitHubAsset asset, string tempDir, IProgress<string> progress, string releaseName, CancellationToken cancellationToken)
+    // The file name is always one of our own constants, never taken from the server.
+    private async Task<string> DownloadAsync(string url, string tempDir, string fileName, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(tempDir);
-        var destination = Path.Combine(tempDir, asset.Name);
-        progress.Report($"Downloading {asset.Name} from release {releaseName}...");
+        var destination = Path.Combine(tempDir, fileName);
 
-        await using var remote = await _httpClient.GetStreamAsync(asset.BrowserDownloadUrl, cancellationToken);
+        await using var remote = await _httpClient.GetStreamAsync(url, cancellationToken);
         await using var local = File.Create(destination);
         await remote.CopyToAsync(local, cancellationToken);
         return destination;
@@ -89,6 +121,7 @@ public sealed class GitHubReleaseClient
 
     private sealed record GitHubAsset(
         string Name,
+        long Size,
         [property: System.Text.Json.Serialization.JsonPropertyName("browser_download_url")]
         string BrowserDownloadUrl);
 }

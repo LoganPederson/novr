@@ -7,7 +7,7 @@ NOVR is a reworked version of [UUVR](https://github.com/Raicuparta/uuvr) designe
 ### Recommended: GUI installer
 
 1. Close Nuclear Option before installing or updating the mod.
-2. Download the latest installer from the [NOVR releases page](https://github.com/InfernoSuperNova/novr/releases/latest):
+2. Download the latest installer from the [NOVR releases page](https://github.com/LoganPederson/novr/releases/latest):
     - **Windows:** `NOVR.Installer-Win.exe`
     - **Linux/Proton:** `NOVR.Installer-Linux`
 3. Run the installer directly.
@@ -23,13 +23,12 @@ The installer can also update, repair, or uninstall NOVR after it is installed.
 
 The installer:
 
-- Finds your Nuclear Option install.
-- Installs BepInEx 5.x if it is missing.
-- Downloads the latest NOVR release zip.
-- Installs NOVR into:
-    - `BepInEx/plugins/NOVR`
-    - `BepInEx/patchers/NOVR`
-- Writes the installed NOVR version to `BepInEx/plugins/NOVR/version.txt`.
+- Finds your Nuclear Option install, in any Steam library.
+- Installs BepInEx 5.4.23.5 if it is missing, verified against a SHA-256 built into the installer.
+- Downloads the latest NOVR release zip, and optionally [Message Log](https://github.com/LoganPederson/no-message-log) (chat and kill history, weapons in the kill feed).
+- Checks each download against the `SHA256SUMS.txt` published with its release, and installs nothing if a file doesn't match.
+- Installs NOVR into `BepInEx/plugins/NOVR` and `BepInEx/patchers/NOVR`, and Message Log into `BepInEx/plugins/MessageLog`. Each mod only ever replaces its own folders.
+- Writes each installed version to a `version.txt` in its plugin folder.
 - On Linux/Proton, attempts to configure the `winhttp` Wine override needed by BepInEx.
 
 Use BepInEx 5.x only. Do not use BepInEx 6.x unless the project explicitly says it is supported.
@@ -39,9 +38,9 @@ Use BepInEx 5.x only. Do not use BepInEx 6.x unless the project explicitly says 
 Use this only if the installer does not work for your setup.
 
 1. Close Nuclear Option.
-2. Install [BepInEx 5.x](https://github.com/BepInEx/BepInEx/releases/latest) into the Nuclear Option game folder.
+2. Install [BepInEx 5.4.23.5](https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5) (the version the installer uses) into the Nuclear Option game folder.
     - After installing BepInEx, this folder should exist: `Nuclear Option/BepInEx/core`.
-3. Download `NOVR.zip` from the [latest NOVR release](https://github.com/InfernoSuperNova/novr/releases/latest).
+3. Download `NOVR.zip` from the [latest NOVR release](https://github.com/LoganPederson/novr/releases/latest).
 4. Extract the contents of `NOVR.zip` into `Nuclear Option/BepInEx`.
 5. Confirm these files exist:
 

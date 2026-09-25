@@ -16,4 +16,11 @@ public sealed record GameInstallInfo(
     public string PatcherDir => Path.Combine(BepInExDir, "patchers", InstallerConstants.ModFolderName);
     public string VersionFile => Path.Combine(PluginDir, InstallerConstants.VersionFileName);
     public ReleaseVersion Version => File.Exists(VersionFile) ? (ReleaseVersion)File.ReadAllText(VersionFile) : (ReleaseVersion)"0.0.0";
+
+    // A path under BepInEx/ from a component's "plugins/X"-style folder.
+    public string BepInExPath(string relativeFolder) =>
+        Path.Combine(BepInExDir, relativeFolder.Replace('/', Path.DirectorySeparatorChar));
+
+    public bool IsInstalled(ModComponent component) =>
+        component.Folders.All(folder => Directory.Exists(BepInExPath(folder)));
 }

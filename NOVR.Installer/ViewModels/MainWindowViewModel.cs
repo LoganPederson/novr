@@ -25,6 +25,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isInstalledMode;
     private bool _removeBepInExOnFinish;
     private bool _showUninstallFinish;
+    private bool _includeMessageLog = true;
     private Func<Task<string?>>? _browseForFolderAsync;
     private Task<DownloadedNovrRelease>? _latestNovrDownloadTask;
     private object _downloadLock = new();
@@ -113,6 +114,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         set => SetField(ref _removeBepInExOnFinish, value);
     }
 
+    // Optional components; unchecking one removes it on the next install, update or repair.
+    public bool IncludeMessageLog
+    {
+        get => _includeMessageLog;
+        set => SetField(ref _includeMessageLog, value);
+    }
+
     public GameInstallInfo? GameInfo
     {
         get => _gameInfo;
@@ -142,10 +150,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         await ScanAsync();
         var progress = new Progress<string>(message => Status = message);
-        await EnsureLatestNovrReleaseDownloadedAsync(progress, CancellationToken.None);
-        
+        ReleaseVersion latest;
+        try
+        {
+            latest = (await EnsureLatestNovrReleaseDownloadedAsync(progress, CancellationToken.None)).Version;
+        }
+        catch (Exception ex)
+        {
+            // Runs from the window's Opened event, so an exception here would take down the installer.
+            Status = "Could not check the latest NOVR release.";
+            Details = ex.Message;
+            return;
+        }
+
         var currentInstalled = GameInfo?.Version;
-        var latest = _releaseClient.FoundNOVRRelease;
 
         var installType = InstallType.Install;
         ((IProgress<string>)progress).Report($"Latest: {latest}");
@@ -184,9 +202,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         try
         {
-            var zip = await _releaseClient.DownloadLatestNovrReleaseAsync(tempDir, progress, cancellationToken);
-            progress.Report($"Downloaded latest NOVR release: {_releaseClient.FoundNOVRRelease}");
-            return new DownloadedNovrRelease(zip, _releaseClient.FoundNOVRRelease, tempDir);
+            var (zip, version) = await _releaseClient.DownloadVerifiedReleaseAsync(ModComponent.Novr, tempDir, progress, cancellationToken);
+            progress.Report($"Downloaded and verified NOVR {version}");
+            return new DownloadedNovrRelease(zip, version, tempDir);
         }
         catch
         {
@@ -221,6 +239,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             else
             {
                 GameInfo = found;
+                // Offer Message Log on fresh installs; on an existing install, reflect whether it's there.
+                IncludeMessageLog = found.ModState != InstallState.FullyInstalled || found.IsInstalled(ModComponent.MessageLog);
                 Status = found.ModState == InstallState.FullyInstalled
                     ? $"NOVR installed version: {found.Version}"
                     : "Nuclear Option found.";
@@ -275,19 +295,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 if (!info.HasBepInEx)
                 {
-                    var bepInExZip = await _releaseClient.DownloadLatestBepInEx5Async(tempDir, progress, CancellationToken.None);
+                    var bepInExZip = await _releaseClient.DownloadPinnedBepInExAsync(tempDir, progress, CancellationToken.None);
                     await _installer.InstallBepInExAsync(info, bepInExZip, progress, CancellationToken.None);
                     info = _gameLocator.Inspect(info.GameDir);
                 }
 
                 var release = await EnsureLatestNovrReleaseDownloadedAsync(progress, CancellationToken.None);
 
-                await _installer.InstallOrUpdateNovrAsync(
+                await _installer.InstallComponentAsync(
                     info,
+                    ModComponent.Novr,
                     release.ZipPath,
                     release.Version.ToString(),
                     progress,
                     CancellationToken.None);
+
+                if (IncludeMessageLog)
+                {
+                    var (messageLogZip, messageLogVersion) = await _releaseClient.DownloadVerifiedReleaseAsync(
+                        ModComponent.MessageLog, tempDir, progress, CancellationToken.None);
+                    await _installer.InstallComponentAsync(
+                        info, ModComponent.MessageLog, messageLogZip, messageLogVersion.ToString(), progress, CancellationToken.None);
+                }
+                else if (info.IsInstalled(ModComponent.MessageLog))
+                {
+                    await _installer.UninstallComponentAsync(info, ModComponent.MessageLog, progress, CancellationToken.None);
+                }
 
                 var protonMessage = await _protonPrefixService.TryConfigureWinHttpOverrideAsync(info, progress, CancellationToken.None);
 
@@ -313,11 +346,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await RunBusyAsync(async () =>
         {
             var progress = new Progress<string>(message => Status = message);
-            await _installer.UninstallNovrAsync(info, progress, CancellationToken.None);
+            foreach (var component in ModComponent.Catalog)
+            {
+                await _installer.UninstallComponentAsync(info, component, progress, CancellationToken.None);
+            }
             GameInfo = _gameLocator.Inspect(info.GameDir);
             ShowUninstallFinish = true;
             IsInstalledMode = false;
-            Status = "NOVR was uninstalled.";
+            Status = "NOVR and its companion mods were uninstalled.";
             Details = "Optionally remove BepInEx, then click Finish to return to the install screen.";
         });
     }
@@ -390,7 +426,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         return $"Game: {info.GameDir}{Environment.NewLine}" +
                $"BepInEx: {(info.HasBepInEx ? "installed" : "not installed")}{Environment.NewLine}" +
-               $"NOVR: {info.ModState}";
+               $"NOVR: {info.ModState}{Environment.NewLine}" +
+               $"Message Log: {(info.IsInstalled(ModComponent.MessageLog) ? "installed" : "not installed")}";
     }
 
     private async Task RunBusyAsync(Func<Task> action)

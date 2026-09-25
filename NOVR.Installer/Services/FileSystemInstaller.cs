@@ -5,6 +5,7 @@ namespace NOVR.Installer.Services;
 
 public sealed class FileSystemInstaller
 {
+    // The BepInEx zip is verified against the pinned hash before this runs, so extracting it over the game is safe.
     public async Task InstallBepInExAsync(GameInstallInfo game, string bepInExZip, IProgress<string> progress, CancellationToken cancellationToken)
     {
         progress.Report("Installing BepInEx...");
@@ -14,29 +15,33 @@ public sealed class FileSystemInstaller
         }, cancellationToken);
     }
 
-    public async Task InstallOrUpdateNovrAsync(GameInstallInfo game, string novrZip, string releaseName, IProgress<string> progress, CancellationToken cancellationToken)
+    // Replaces exactly the component's own folders under BepInEx/ with the ones from its release zip. Anything
+    // else in the zip is ignored, so a release can never overwrite BepInEx itself or another mod.
+    public async Task InstallComponentAsync(GameInstallInfo game, ModComponent component, string zip, string version, IProgress<string> progress, CancellationToken cancellationToken)
     {
-        progress.Report("Installing NOVR " + releaseName + "...");
+        progress.Report($"Installing {component.Name} {version}...");
         var tempExtract = Path.Combine(Path.GetTempPath(), "novr-installer-" + Guid.NewGuid().ToString("N"));
-        
+
         try
         {
             await Task.Run(() =>
             {
-                ZipFile.ExtractToDirectory(novrZip, tempExtract);
-                var pluginsSource = Path.Combine(tempExtract, InstallerConstants.PluginsFolderName, InstallerConstants.ModFolderName);
-                var patchersSource = Path.Combine(tempExtract, InstallerConstants.PatchersFolderName, InstallerConstants.ModFolderName);
+                ZipFile.ExtractToDirectory(zip, tempExtract);
 
-                if (!Directory.Exists(pluginsSource) || !Directory.Exists(patchersSource))
+                foreach (var folder in component.Folders)
                 {
-                    throw new InvalidOperationException("NOVR ZIP must contain plugins/NOVR and patchers/NOVR folders.");
+                    if (!Directory.Exists(Path.Combine(tempExtract, folder)))
+                        throw new InvalidOperationException($"The {component.Name} zip is missing its {folder} folder.");
                 }
 
-                TryDeleteDirectory(game.PluginDir);
-                TryDeleteDirectory(game.PatcherDir);
-                CopyDirectory(tempExtract, game.BepInExDir);
-                CreateVersionMetaData(Path.Combine(game.BepInExDir, InstallerConstants.PluginsFolderName, InstallerConstants.ModFolderName),  releaseName);
+                foreach (var folder in component.Folders)
+                {
+                    var destination = game.BepInExPath(folder);
+                    TryDeleteDirectory(destination);
+                    CopyDirectory(Path.Combine(tempExtract, folder), destination);
+                }
 
+                File.WriteAllText(Path.Combine(game.BepInExPath(component.VersionFolder), InstallerConstants.VersionFileName), version);
             }, cancellationToken);
         }
         finally
@@ -45,19 +50,13 @@ public sealed class FileSystemInstaller
         }
     }
 
-    private void CreateVersionMetaData(string path, string releaseName)
+    public async Task UninstallComponentAsync(GameInstallInfo game, ModComponent component, IProgress<string> progress, CancellationToken cancellationToken)
     {
-        var versionFile = Path.Combine(path, InstallerConstants.VersionFileName);
-        File.WriteAllText(versionFile, releaseName);
-    }
-
-    public async Task UninstallNovrAsync(GameInstallInfo game, IProgress<string> progress, CancellationToken cancellationToken)
-    {
-        progress.Report("Removing NOVR files...");
+        progress.Report($"Removing {component.Name}...");
         await Task.Run(() =>
         {
-            TryDeleteDirectory(game.PluginDir);
-            TryDeleteDirectory(game.PatcherDir);
+            foreach (var folder in component.Folders)
+                TryDeleteDirectory(game.BepInExPath(folder));
         }, cancellationToken);
     }
 
@@ -74,14 +73,15 @@ public sealed class FileSystemInstaller
 
     private static void CopyDirectory(string source, string destination)
     {
+        Directory.CreateDirectory(destination);
         foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
         {
-            Directory.CreateDirectory(directory.Replace(source, destination, StringComparison.Ordinal));
+            Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
         }
 
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            var destinationFile = file.Replace(source, destination, StringComparison.Ordinal);
+            var destinationFile = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
             File.Copy(file, destinationFile, overwrite: true);
         }
