@@ -1,9 +1,10 @@
 name: Release
 
-# Push a tag like v0.4.5 to build NOVR.zip and both installers and attach them to a draft release.
+# Push a version tag (0.4.5 or v0.4.5) to build NOVR.zip and both installers, and attach them with a
+# SHA256SUMS.txt to a draft release. The installer checks every download against SHA256SUMS.txt.
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: write
@@ -12,33 +13,44 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
+# Actions are pinned to full commit SHAs (tags can be moved); the comment shows the release each SHA is.
 jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: 10.0.x
+
+      - name: Verify native DLLs against pinned hashes
+        run: ./tools/Verify-NativeDlls.ps1
 
       - name: Require game reference assemblies
         if: ${{ vars.GAME_REFS_REPO == '' }}
         run: throw "Set the GAME_REFS_REPO variable and GAME_REFS_TOKEN secret; see tools/Export-GameReferences.ps1."
 
       - name: Check out game reference assemblies
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ vars.GAME_REFS_REPO }}
           token: ${{ secrets.GAME_REFS_TOKEN }}
           path: game-refs
+          persist-credentials: false
 
+      # The tag arrives through an environment variable rather than being pasted into the script, so a
+      # crafted tag name can't inject PowerShell.
       - name: Read version from tag
         id: version
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          $version = $env:TAG.TrimStart('v')
           # BepInEx parses the plugin version with System.Version, so it must be purely numeric.
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got ${{ github.ref_name }}" }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like 1.2.3 or v1.2.3" }
           $propsVersion = ([xml](Get-Content NOVR.Build/NOVR.Build.props)).Project.PropertyGroup.NovrVersion.'#text'
           if ($propsVersion -ne $version) {
             echo "::warning::Tag $version differs from NovrVersion $propsVersion in NOVR.Build.props; building as $version."
@@ -46,12 +58,33 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Build
-        run: dotnet build NuclearOptionVirtualRealityMod.sln -c Release -p:NovrVersion=${{ steps.version.outputs.version }} -p:NuclearOptionGameDir="${{ github.workspace }}\game-refs"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet build NuclearOptionVirtualRealityMod.sln -c Release -p:NovrVersion=$env:VERSION -p:NuclearOptionGameDir="${{ github.workspace }}\game-refs"
+
+      - name: Check the release zip has no dev-only content
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead("dist/NOVR.zip")
+          $bad = $zip.Entries | Where-Object { $_.FullName -match 'McpBridge' }
+          $zip.Dispose()
+          if ($bad) { throw "NOVR.zip contains dev-only files: $($bad.FullName -join ', ')" }
+
+      - name: Write SHA256SUMS.txt
+        run: |
+          $files = 'NOVR.zip', 'NOVR.Installer-Win.exe', 'NOVR.Installer-Linux'
+          $lines = foreach ($file in $files) {
+            "{0}  {1}" -f (Get-FileHash "dist/$file" -Algorithm SHA256).Hash.ToLowerInvariant(), $file
+          }
+          [IO.File]::WriteAllLines("$PWD/dist/SHA256SUMS.txt", $lines)
+          Get-Content dist/SHA256SUMS.txt
 
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: >
-          gh release create "${{ github.ref_name }}"
-          dist/NOVR.zip dist/NOVR.Installer-Win.exe dist/NOVR.Installer-Linux
-          --draft --generate-notes --title "NOVR ${{ steps.version.outputs.version }}"
+          gh release create "$env:TAG"
+          dist/NOVR.zip dist/NOVR.Installer-Win.exe dist/NOVR.Installer-Linux dist/SHA256SUMS.txt
+          --draft --generate-notes --title "NOVR $env:VERSION"

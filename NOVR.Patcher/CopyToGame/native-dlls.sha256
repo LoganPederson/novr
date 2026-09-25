@@ -1,0 +1,12 @@
+# Native DLLs the patcher copies into NuclearOption_Data/Plugins on every launch. These run as native code in the
+# game, so each one must be an unmodified official build. CI fails if a file's hash stops matching this list;
+# when updating a DLL, re-verify it against its official source and update the hash and source here.
+#
+# openxr_loader.dll: Khronos OpenXR Loader 1.1.54, x64 release build.
+#   Source: https://github.com/KhronosGroup/OpenXR-SDK-Source/releases/tag/release-1.1.54
+#           OpenXR.Loader.1.1.54.nupkg -> native/x64/release/bin/openxr_loader.dll (verified identical 2026-09-25)
+# UnityOpenXR.dll: Unity OpenXR Plugin (com.unity.xr.openxr) 1.17.0, Windows x64.
+#   Source: https://download.packages.unity.com/com.unity.xr.openxr/-/com.unity.xr.openxr-1.17.0.tgz
+#           package/Runtime/windows/x64/UnityOpenXR.dll (verified identical 2026-09-25)
+f7384429c16288d9c2c123acfca1e040c9cec6c5484a3f5a5107d6aa32ba57e8  Plugins/x64/openxr_loader.dll
+a132c442b0260477d6aa060061547d6e5aea6549f7e6587624b4084d53c6551f  Plugins/x64/UnityOpenXR.dll

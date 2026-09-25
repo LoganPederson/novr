@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, dev-improvements]
   pull_request:
   workflow_dispatch:
 
@@ -18,28 +18,36 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   REFS_PROBE: game-refs/NuclearOption_Data/Managed/Assembly-CSharp.dll
 
+# Actions are pinned to full commit SHAs (tags can be moved); the comment shows the release each SHA is.
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: 10.0.x
+
+      - name: Verify native DLLs against pinned hashes
+        run: ./tools/Verify-NativeDlls.ps1
 
       # The NOVR plugin compiles against the game's assemblies, which can't live in this repo.
       # Reference-only copies (tools/Export-GameReferences.ps1) are pulled from a private repo when
       # the GAME_REFS_REPO variable and GAME_REFS_TOKEN secret are set. Without them (including PRs
       # from forks, which don't get secrets) CI still builds everything that doesn't need the game.
+      # persist-credentials: false keeps the token out of game-refs/.git/config while the build runs.
       - name: Check out game reference assemblies
         if: ${{ vars.GAME_REFS_REPO != '' }}
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ vars.GAME_REFS_REPO }}
           token: ${{ secrets.GAME_REFS_TOKEN }}
           path: game-refs
+          persist-credentials: false
 
       - name: Build everything
         if: ${{ hashFiles(env.REFS_PROBE) != '' }}
@@ -53,7 +61,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build NOVR.Installer/NOVR.Installer.csproj -c Release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: novr-${{ github.sha }}
           path: dist/

@@ -27,7 +27,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Content Include="CopyToGame\**" >
+        <!-- native-dlls.sha256 documents and pins the native DLLs; it's checked by CI, not shipped. -->
+        <Content Include="CopyToGame\**" Exclude="CopyToGame\native-dlls.sha256">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
         <Content Include="classdata.tpk">
