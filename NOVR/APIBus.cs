@@ -35,7 +35,7 @@ public class APIBus : MonoBehaviour
         var newMainCamera = Camera.main;                                                         
         if (newMainCamera != _previousMainCamera)                                                
         {                                                                                        
-            OnMainCameraChanged(_previousMainCamera, newMainCamera);                             
+            OnMainCameraChanged?.Invoke(_previousMainCamera, newMainCamera);                             
             _previousMainCamera = newMainCamera;                                                 
         }                                                                                        
         
@@ -79,21 +79,24 @@ public class APIBus : MonoBehaviour
         
 
         if (isNull) return HandoffState.InitialDispatcher;
-        bool unityDisposed = _current != null;
         bool isUs = _current == this;
-        if (isUs) return current;   
+        if (isUs) return current;
+        // Unity's == reports destroyed objects as null even though the C# reference is still set.
+        bool unityDisposed = _current == null;
         if (unityDisposed)
         {
             if (current == HandoffState.NoState) return HandoffState.ProperHandoff;
             if (current == HandoffState.AwaitingPreviousDisposal) return HandoffState.ImproperHandoff;
+            return HandoffState.GodFuckingKnows;
         }
 
-        return HandoffState.GodFuckingKnows;
+        // The previous dispatcher is still alive; wait for it to be destroyed before taking over.
+        return HandoffState.AwaitingPreviousDisposal;
     }
 
     private void LogExtraDispatcher()
     {
-        if (!_loggedExtraEventsError) return;
+        if (_loggedExtraEventsError) return;
         Debug.LogError($"Additional instances of {typeof(APIBus)}. This should not happen!");
         
         _loggedExtraEventsError = true;

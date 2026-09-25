@@ -40,9 +40,38 @@ public class NOVRPlugin : BaseUnityPlugin
         WarnIfLegacyUuvrFoldersExist();
         
         new ModConfiguration(Config);
-        var harm = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
+        var harm = ApplyHarmonyPatches();
         PatchLoader.Apply(harm);
         Core.Create();
+    }
+
+    // Patch each class on its own so a game update that renames one target only disables that
+    // patch, instead of Harmony.CreateAndPatchAll aborting and skipping every patch after it.
+    private Harmony ApplyHarmonyPatches()
+    {
+        var harmony = new Harmony("deltawing.novr");
+        var applied = 0;
+        var failed = 0;
+        foreach (var type in AccessTools.GetTypesFromAssembly(Assembly.GetExecutingAssembly()))
+        {
+            try
+            {
+                var patched = harmony.CreateClassProcessor(type).Patch();
+                if (patched != null && patched.Count > 0) applied++;
+            }
+            catch (Exception exception)
+            {
+                failed++;
+                Logger.LogError($"Failed to apply patch {type.FullName}; that feature is disabled. " +
+                                $"This usually means the game updated and NOVR needs an update too.\n{exception}");
+            }
+        }
+
+        if (failed > 0)
+            Logger.LogWarning($"Applied {applied} Harmony patch classes, {failed} failed. See errors above.");
+        else
+            Logger.LogInfo($"Applied {applied} Harmony patch classes.");
+        return harmony;
     }
 
     private void TrackingAcquired(XRNodeState obj)

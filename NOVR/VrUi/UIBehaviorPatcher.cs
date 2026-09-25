@@ -109,14 +109,18 @@ public class UIBehaviorPatcher : NOVRBehaviour
         var deferredComponentPatches = new List<KeyValuePair<Component, Type>>();
         foreach (var kvp in _toPatch_component)
         {
-            Debug.Log($"UIBehaviorPatcher: Adding {kvp.Value.Name} to {kvp.Key.name} (component patch)");
-            if (kvp.Key.name == "" || kvp.Key.name == null)
-            {
-                Debug.LogWarning($"Component not loaded fully?");
-                return;
-            }
             var comp = kvp.Key;
             var toAdd = kvp.Value;
+            // Destroyed before we got to it (e.g. scene unloaded); reading its name would throw every tick.
+            if (comp == null) continue;
+            if (string.IsNullOrEmpty(comp.name))
+            {
+                // Not loaded fully yet; retry on the next tick without blocking the others.
+                deferredComponentPatches.Add(kvp);
+                continue;
+            }
+
+            Debug.Log($"UIBehaviorPatcher: Adding {toAdd.Name} to {comp.name} (component patch)");
             if (comp is ControlMapper controlMapper)
             {
                 var canvas = FindChildByName(controlMapper.transform, "Canvas");
