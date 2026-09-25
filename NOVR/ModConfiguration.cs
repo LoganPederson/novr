@@ -36,6 +36,7 @@ public class ModConfiguration
     public readonly ConfigEntry<float> HudMinimapOpacity;
     public readonly ConfigEntry<float> HudInfoPanelScale;
     public readonly ConfigEntry<float> HudInfoPanelSpread;
+    public readonly ConfigEntry<bool> ShowEnemyTypeOnHover;
 
     private readonly Dictionary<string, (ConfigEntry<float> Forward, ConfigEntry<float> Right)> _perPlaneEntries = new();
 
@@ -198,6 +199,13 @@ public class ModConfiguration
                 "and the status display. Markers drawn over the world (flight path, pitch ladder, target boxes) are not affected, " +
                 "so they stay lined up with what they point at.",
                 new AcceptableValueRange<float>(0.5f, 2.0f)));
+
+        ShowEnemyTypeOnHover = config.Bind(
+            "HUD",
+            "Show Enemy Type On Hover",
+            true,
+            "When looking at a hostile unit's marker, label it with its type (the same name the target screen shows once it's locked). " +
+            "The base game only labels friendly aircraft; turn this off to match it, e.g. for multiplayer servers that expect vanilla information.");
 
         HudInfoPanelSpread = config.Bind(
             "HUD",

@@ -15,6 +15,9 @@ namespace NOVR.VrUi.HarmonyPatches;
 //
 // This patch re-implements the hover test against the VR target designator (the "selector" that follows
 // head look) and places the label in world space next to the hovered marker, facing the HUD camera.
+//
+// Vanilla only labels friendly aircraft. With "Show Enemy Type On Hover" enabled, hostile units are labelled
+// too, with the same type name the target screen shows once they're locked.
 internal static class AllyInfoVrHoverPatch
 {
     // Vanilla accepts markers within 200px of HUD centre. Markers sit on a sphere of radius HudDistance,
@@ -26,10 +29,16 @@ internal static class AllyInfoVrHoverPatch
     private static readonly FieldInfo HoverIconExistsField = AccessTools.Field(typeof(global::AllyInfo), "hoverIconExists");
     private static readonly FieldInfo HoveredAllyField = AccessTools.Field(typeof(global::AllyInfo), "hoveredAlly");
     private static readonly FieldInfo HoveredAllyMarkerField = AccessTools.Field(typeof(global::AllyInfo), "hoveredAllyMarker");
+    private static readonly AccessTools.FieldRef<global::CombatHUD, List<global::HUDUnitMarker>> MarkersField =
+        AccessTools.FieldRefAccess<global::CombatHUD, List<global::HUDUnitMarker>>("markers");
 
+    // The unit whose label text was last written, so the text is only rebuilt when the hovered unit changes.
+    private static global::Unit? _labelledUnit;
     private static bool _loggedHierarchy;
 
     private static bool IsVrHudActive() => APIBus.MainCamera != null && APIBus.CockpitHudCamera != null;
+
+    private static bool ShowEnemies => ModConfiguration.Instance?.ShowEnemyTypeOnHover.Value ?? true;
 
     // World-space point the player is "pointing" at on the HUD sphere: the target designator if it exists,
     // otherwise straight ahead of the HUD camera.
@@ -39,6 +48,16 @@ internal static class AllyInfoVrHoverPatch
         if (designator != null)
             return designator.transform.position;
         return cockpitHudCamera.transform.forward * VrHudProjectionHelper.HudDistance;
+    }
+
+    // Friendly aircraft always (as vanilla); hostile units when enabled. Missiles and neutral units are skipped.
+    private static bool IsLabelled(global::Unit unit, global::Aircraft ownAircraft, bool showEnemies)
+    {
+        if (unit == null || unit == ownAircraft || unit is global::Missile || unit.NetworkHQ == null)
+            return false;
+        if (unit.NetworkHQ == ownAircraft.NetworkHQ)
+            return unit is Aircraft;
+        return showEnemies;
     }
 
     [HarmonyPatch(typeof(global::AllyInfo), "UpdateAllyInfoOnHover")]
@@ -58,45 +77,64 @@ internal static class AllyInfoVrHoverPatch
             var cockpitHudCamera = APIBus.CockpitHudCamera;
             var ownAircraft = combatHud.aircraft;
             var anchor = GetSelectorAnchor(combatHud, cockpitHudCamera);
-            var previousAlly = HoveredAllyField.GetValue(__instance) as Aircraft;
+            var showEnemies = ShowEnemies;
 
-            Aircraft? bestAlly = null;
             global::HUDUnitMarker? bestMarker = null;
             var bestSquared = HoverRangeSquared;
 
-            IEnumerable<Aircraft> allies = ownAircraft.NetworkHQ.GetActiveAircraft(false);
-            foreach (var ally in allies)
+            var markers = MarkersField(combatHud);
+            if (markers != null)
             {
-                if (ally == null || ally == ownAircraft)
-                    continue;
-                if (!combatHud.TryGetMarker(ally, out var marker) || marker == null || marker.image == null || !marker.image.enabled)
-                    continue;
+                foreach (var marker in markers)
+                {
+                    if (marker == null || marker.image == null || !marker.image.enabled)
+                        continue;
+                    if (!IsLabelled(marker.unit, ownAircraft, showEnemies))
+                        continue;
 
-                var squared = (marker.image.transform.position - anchor).sqrMagnitude;
-                if (squared >= bestSquared)
-                    continue;
+                    var squared = (marker.image.transform.position - anchor).sqrMagnitude;
+                    if (squared >= bestSquared)
+                        continue;
 
-                bestSquared = squared;
-                bestAlly = ally;
-                bestMarker = marker;
+                    bestSquared = squared;
+                    bestMarker = marker;
+                }
             }
 
-            var hoverIconExists = bestAlly != null && bestMarker != null;
-            HoveredAllyField.SetValue(__instance, bestAlly);
+            var hoverIconExists = bestMarker != null;
+            var hoveredUnit = bestMarker?.unit;
+            // hoveredAlly is typed Aircraft; vanilla only reads it for the next hover pass.
+            HoveredAllyField.SetValue(__instance, hoveredUnit as Aircraft);
             HoveredAllyMarkerField.SetValue(__instance, bestMarker);
             HoverIconExistsField.SetValue(__instance, hoverIconExists);
             text.enabled = hoverIconExists;
 
-            if (hoverIconExists && previousAlly != bestAlly)
+            if (hoverIconExists && hoveredUnit != _labelledUnit)
             {
-                text.text = "";
-                if (bestAlly!.Player != null)
-                    text.text += bestAlly.Player.GetDisplayName(PlayerNameContext.Other) + "\n";
-                text.text += bestAlly.definition.code + "\n\n\n ";
-                text.color = ThemeManager.Active.ColorTheme.HudUnitFriendly.WithAlpha(1.0f);
+                text.text = BuildLabel(hoveredUnit!, ownAircraft);
+                var colorTheme = ThemeManager.Active.ColorTheme;
+                var color = hoveredUnit!.NetworkHQ == ownAircraft.NetworkHQ ? colorTheme.HudUnitFriendly : colorTheme.HudUnitHostile;
+                text.color = color.WithAlpha(1.0f);
             }
 
+            _labelledUnit = hoverIconExists ? hoveredUnit : null;
             return false;
+        }
+
+        private static string BuildLabel(global::Unit unit, global::Aircraft ownAircraft)
+        {
+            // Friendly: player name and airframe code, exactly as vanilla.
+            if (unit.NetworkHQ == ownAircraft.NetworkHQ && unit is Aircraft ally)
+            {
+                var label = "";
+                if (ally.Player != null)
+                    label += ally.Player.GetDisplayName(PlayerNameContext.Other) + "\n";
+                return label + ally.definition.code + "\n\n\n ";
+            }
+
+            // Hostile: the type name the target screen shows for a locked target.
+            var typeName = unit is Aircraft ? unit.definition.unitName : unit.unitName;
+            return typeName + "\n\n\n ";
         }
     }
 
@@ -104,7 +142,7 @@ internal static class AllyInfoVrHoverPatch
     private static class LateUpdatePatch
     {
         // Vanilla LateUpdate copies the marker's canvas-local position onto the label and disables the
-        // label when the hovered ally is selected or the HUD is jammed. Let it run, then move the label
+        // label when the hovered unit is selected or the HUD is jammed. Let it run, then move the label
         // into VR world space if it is still enabled.
         [HarmonyPostfix]
         private static void Postfix(global::AllyInfo __instance)
@@ -114,7 +152,11 @@ internal static class AllyInfoVrHoverPatch
 
             var text = HoveredAllyInfoField.GetValue(__instance) as TextMeshProUGUI;
             if (text == null || !text.enabled)
+            {
+                // Vanilla hid the label (hovered unit locked, jammed, or gone); relabel when it next shows.
+                _labelledUnit = null;
                 return;
+            }
 
             var marker = HoveredAllyMarkerField.GetValue(__instance) as global::HUDUnitMarker;
             if (marker == null || marker.image == null)
