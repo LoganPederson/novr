@@ -44,7 +44,7 @@ public class ModConfiguration
             "General",
             "Target Designator Overshoot",
             1.2f,
-            "How much the target designator should multiply rotation to make for easier high off boresight target designation. Set to 1.0 to disable");
+            "How much the target designator should multiply rotation to make for easier high off boresight target designation. Set to 1.0 to disable. Values from 1.0 to 2.0 are supported.");
 
         EnableNativeMenuUi = config.Bind(
             "Experimental",

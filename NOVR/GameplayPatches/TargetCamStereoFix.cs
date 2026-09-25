@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using UnityEngine;
 
@@ -34,13 +34,11 @@ internal static class TargetCamStereoFix
       }
 }
 
-// Workaround for the confirmed-broken Camera.fieldOfView setter on TargetCam's camera (see
-// GitHub issue InfernoSuperNova/novr#25): extensive live tracing proved the setter never
-// actually commits a new value for this specific camera object, even on a same-line
-// force-write, so the game's own zoom-out logic (targetFOV -> cam.fieldOfView lerp) never
-// visibly applies. Bypasses fieldOfView entirely by tracking our own lerped FOV value per
-// TargetCam instance and applying it directly via Camera.projectionMatrix, which is a distinct
-// underlying mechanism from fieldOfView and unaffected by whatever is blocking that setter.
+// Workaround for TargetCam's zoom never applying (GitHub issue InfernoSuperNova/novr#25).
+// The root cause was NOVR's own CameraPatches prefix, which used to block Camera.fieldOfView
+// writes on every camera. That prefix now lets texture-target cameras through, so the game's
+// own targetFOV -> cam.fieldOfView lerp should work again; this projection-matrix path is kept
+// until that is confirmed in a headset, and can then be deleted.
 [HarmonyPatch(typeof(TargetCam), "Update")]
 internal static class TargetCamZoomWorkaround
 {
@@ -50,9 +48,9 @@ internal static class TargetCamZoomWorkaround
       private static readonly AccessTools.FieldRef<TargetCam, float> TargetFovField =
                 AccessTools.FieldRefAccess<TargetCam, float>("targetFOV");
 
-      // Tracks our own independent "current FOV" per TargetCam instance, since we can't trust
-      // reading cam.fieldOfView back (it never reflects what was actually requested).
-      private static readonly Dictionary<TargetCam, float> CurrentFov = new();
+      // Our own "current FOV" per TargetCam instance. Weakly keyed so destroyed TargetCams
+      // (one per aircraft spawn) don't accumulate for the whole session.
+      private static readonly ConditionalWeakTable<TargetCam, StrongBox<float>> CurrentFov = new();
 
       [HarmonyPostfix]
       private static void Postfix(TargetCam __instance)
@@ -64,12 +62,12 @@ internal static class TargetCamZoomWorkaround
 
                 if (!CurrentFov.TryGetValue(__instance, out var current))
                 {
-                              current = targetFov;
+                              current = new StrongBox<float>(targetFov);
+                              CurrentFov.Add(__instance, current);
                 }
 
-                current = Mathf.Lerp(current, targetFov, Time.deltaTime);
-                CurrentFov[__instance] = current;
+                current.Value = Mathf.Lerp(current.Value, targetFov, Time.deltaTime);
 
-                cam.projectionMatrix = Matrix4x4.Perspective(current, cam.aspect, cam.nearClipPlane, cam.farClipPlane);
+                cam.projectionMatrix = Matrix4x4.Perspective(current.Value, cam.aspect, cam.nearClipPlane, cam.farClipPlane);
       }
 }
