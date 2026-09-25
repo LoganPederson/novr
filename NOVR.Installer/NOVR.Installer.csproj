@@ -29,6 +29,9 @@
 
     <InstallerDistDir>$(MSBuildThisFileDirectory)../dist</InstallerDistDir>
     <InstallerPublishIntermediateDir>$(BaseIntermediateOutputPath)publish</InstallerPublishIntermediateDir>
+    <!-- Publish with the same SDK that is running this build, not whatever dotnet is first on PATH. -->
+    <InstallerDotnetExe Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</InstallerDotnetExe>
+    <InstallerDotnetExe Condition="'$(InstallerDotnetExe)' == ''">dotnet</InstallerDotnetExe>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,9 +46,9 @@
 
     <MakeDir Directories="$(InstallerDistDir)" />
 
-    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -r linux-x64 --no-restore -p:IsPublishingInstaller=true -p:SelfContained=true -p:PublishSingleFile=true -p:PublishDir=&quot;$(InstallerPublishIntermediateDir)/linux-x64/&quot;" />
+    <Exec Command="&quot;$(InstallerDotnetExe)&quot; publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -r linux-x64 --no-restore -p:IsPublishingInstaller=true -p:SelfContained=true -p:PublishSingleFile=true -p:PublishDir=&quot;$(InstallerPublishIntermediateDir)/linux-x64/&quot;" />
 
-    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -r win-x64 --no-restore -p:IsPublishingInstaller=true -p:SelfContained=true -p:PublishSingleFile=true -p:PublishDir=&quot;$(InstallerPublishIntermediateDir)/win-x64/&quot;" />
+    <Exec Command="&quot;$(InstallerDotnetExe)&quot; publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -r win-x64 --no-restore -p:IsPublishingInstaller=true -p:SelfContained=true -p:PublishSingleFile=true -p:PublishDir=&quot;$(InstallerPublishIntermediateDir)/win-x64/&quot;" />
 
     <Copy
             SourceFiles="$(InstallerPublishIntermediateDir)/linux-x64/NOVR.Installer"

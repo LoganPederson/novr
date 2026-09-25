@@ -1,9 +1,11 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using NOVR.Installer.Models;
 
 namespace NOVR.Installer.Services;
 
-public sealed class GameLocator
+public sealed partial class GameLocator
 {
     public IReadOnlyList<string> GetCandidatePaths()
     {
@@ -15,6 +17,8 @@ public sealed class GameLocator
         {
             candidates.Add(envPath);
         }
+
+        candidates.AddRange(GetSteamLibraryCandidates(home));
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -70,6 +74,63 @@ public sealed class GameLocator
 
         return new GameInstallInfo(normalized, true, hasBepInEx, state, null);
     }
+
+    // Every Steam library listed in libraryfolders.vdf, so installs outside the default library are found.
+    private static IEnumerable<string> GetSteamLibraryCandidates(string home)
+    {
+        var steamRoots = new List<string>();
+        if (OperatingSystem.IsWindows())
+        {
+            if (Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) is string steamPath &&
+                !string.IsNullOrWhiteSpace(steamPath))
+            {
+                steamRoots.Add(Path.GetFullPath(steamPath));
+            }
+        }
+        else
+        {
+            steamRoots.Add(Path.Combine(home, ".steam", "steam"));
+            steamRoots.Add(Path.Combine(home, ".steam", "debian-installation"));
+            steamRoots.Add(Path.Combine(home, ".local", "share", "Steam"));
+            steamRoots.Add(Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"));
+        }
+
+        var libraries = new List<string>();
+        foreach (var steamRoot in steamRoots)
+        {
+            libraries.Add(steamRoot);
+            var libraryFolders = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
+            if (!File.Exists(libraryFolders))
+            {
+                continue;
+            }
+
+            try
+            {
+                libraries.AddRange(ParseLibraryFolders(File.ReadAllText(libraryFolders)));
+            }
+            catch (IOException)
+            {
+                // Unreadable library list; the default library above is still tried.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return libraries.Select(library => Path.Combine(library, "steamapps", "common", "Nuclear Option"));
+    }
+
+    internal static IEnumerable<string> ParseLibraryFolders(string vdf)
+    {
+        foreach (Match match in LibraryPathRegex().Matches(vdf))
+        {
+            yield return match.Groups[1].Value.Replace(@"\\", @"\");
+        }
+    }
+
+    [GeneratedRegex("\"path\"\\s+\"([^\"]+)\"", RegexOptions.IgnoreCase)]
+    private static partial Regex LibraryPathRegex();
 
     private static string ExpandHome(string path)
     {

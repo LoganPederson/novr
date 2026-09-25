@@ -9,6 +9,10 @@
     <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And Exists('$(HOME)/.steam/debian-installation/steamapps/common/Nuclear Option/NuclearOption_Data/Managed')">$(HOME)/.steam/debian-installation/steamapps/common/Nuclear Option</NuclearOptionGameDirResolved>
     <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And Exists('$(HOME)/.local/share/Steam/steamapps/common/Nuclear Option/NuclearOption_Data/Managed')">$(HOME)/.local/share/Steam/steamapps/common/Nuclear Option</NuclearOptionGameDirResolved>
 
+    <!-- Steam's own install location from the registry, wherever the user put it. -->
+    <NovrSteamPath Condition="'$(NovrSteamPath)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">$([MSBuild]::GetRegistryValue('HKEY_CURRENT_USER\Software\Valve\Steam', 'SteamPath'))</NovrSteamPath>
+    <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And '$(NovrSteamPath)' != '' And Exists('$(NovrSteamPath)/steamapps/common/Nuclear Option/NuclearOption_Data/Managed')">$(NovrSteamPath)/steamapps/common/Nuclear Option</NuclearOptionGameDirResolved>
+
     <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And Exists('C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option\NuclearOption_Data\Managed')">C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option</NuclearOptionGameDirResolved>
     <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And Exists('C:\Program Files\Steam\steamapps\common\Nuclear Option\NuclearOption_Data\Managed')">C:\Program Files\Steam\steamapps\common\Nuclear Option</NuclearOptionGameDirResolved>
     <NuclearOptionGameDirResolved Condition="'$(NuclearOptionGameDirResolved)' == '' And Exists('D:\SteamLibrary\steamapps\common\Nuclear Option\NuclearOption_Data\Managed')">D:\SteamLibrary\steamapps\common\Nuclear Option</NuclearOptionGameDirResolved>
