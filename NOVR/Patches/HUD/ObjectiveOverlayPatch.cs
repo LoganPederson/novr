@@ -2,6 +2,7 @@ using System.Reflection;
 using HarmonyLib;
 using NOVR.PatchHelper;
 using NOVR.VrUi.HarmonyPatches;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -14,7 +15,6 @@ internal static class ObjectiveOverlayPatch
     private static readonly FieldInfo SizeIndicatorField = AccessTools.Field(typeof(ObjectiveOverlay), "sizeIndicator");
     private static readonly FieldInfo ObjectiveInfoField = AccessTools.Field(typeof(ObjectiveOverlay), "objectiveInfo");
     private static readonly FieldInfo PointerTailField = AccessTools.Field(typeof(ObjectiveOverlay), "pointerTail");
-    private static readonly FieldInfo BaseColorField = AccessTools.Field(typeof(ObjectiveOverlay), "baseColor");
     private static readonly FieldInfo HiddenField = AccessTools.Field(typeof(ObjectiveOverlay), "hidden");
 
     [PatchPrefix(typeof(ObjectiveOverlay), nameof(ObjectiveOverlay.UpdateOverlay))]
@@ -25,17 +25,18 @@ internal static class ObjectiveOverlayPatch
         if (mainCamera == null || cockpitHudCamera == null)
             return true;
 
-        var objectivePointer = (Image)ObjectivePointerField.GetValue(__instance);
-        var objectiveDot = (Image)ObjectiveDotField.GetValue(__instance);
-        var sizeIndicator = (Image)SizeIndicatorField.GetValue(__instance);
-        var objectiveInfo = (Text)ObjectiveInfoField.GetValue(__instance);
-        var pointerTail = (Transform)PointerTailField.GetValue(__instance);
-        var baseColor = (Color)BaseColorField.GetValue(__instance);
+        // Use "as" so a type change in a game update falls back to vanilla instead of throwing every frame.
+        var objectivePointer = ObjectivePointerField?.GetValue(__instance) as Image;
+        var objectiveDot = ObjectiveDotField?.GetValue(__instance) as Image;
+        var sizeIndicator = SizeIndicatorField?.GetValue(__instance) as Image;
+        // TextMeshProUGUI since Nuclear Option 0.34 (was UnityEngine.UI.Text).
+        var objectiveInfo = ObjectiveInfoField?.GetValue(__instance) as TMP_Text;
+        var pointerTail = PointerTailField?.GetValue(__instance) as Transform;
 
         if (objectivePointer == null || objectiveDot == null || sizeIndicator == null || objectiveInfo == null || pointerTail == null)
             return true;
 
-        HiddenField.SetValue(__instance, false);
+        HiddenField?.SetValue(__instance, false);
         objectivePointer.enabled = true;
         objectiveInfo.enabled = true;
 
@@ -74,7 +75,8 @@ internal static class ObjectiveOverlayPatch
         sizeIndicator.transform.localScale = Vector3.one * (35f * range * invDistance);
         var sizeRangeFactor = range * 20f * invDistance - 0.5f;
         sizeIndicator.transform.localEulerAngles = Vector3.forward * sizeRangeFactor * 3f;
-        sizeIndicator.color = baseColor * Mathf.Clamp01(sizeRangeFactor);
+        // Like vanilla since 0.34: keep the indicator colour (set by SetColor) and only fade its alpha.
+        sizeIndicator.color = sizeIndicator.color.WithAlpha(Mathf.Clamp01(sizeRangeFactor));
         sizeIndicator.transform.position = objectivePointer.transform.position;
 
         var label = result.Objective?.SavedObjective.DisplayName ?? "Waypoint";
