@@ -8,6 +8,7 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
 {
     // Children are looked up by name once and cached; the recursive search used to run four times a frame.
     private readonly Dictionary<string, Transform> _childCache = new();
+    private readonly Dictionary<Transform, Vector3> _baseScales = new();
 
     private void Update()
     {
@@ -15,13 +16,14 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
         transform.position = uiCam.transform.forward * VrHudProjectionHelper.HudDistance;
         transform.rotation = uiCam.transform.rotation;
 
-        SetLocalPosition("Speed", new Vector3(-110f, 150f, 0f)); // TODO: Patch game files and use events to set these gameobjects
-        SetLocalPosition("Altitude", new Vector3(110f, 150f, 0f));
-        SetLocalPosition("Bearing", new Vector3(0f, 200f, 0f));
-        SetLocalPosition("Artificial Horizon", new Vector3(0f, 150f, 0f));
+        SetGauge("Speed", new Vector3(-110f, 150f, 0f)); // TODO: Patch game files and use events to set these gameobjects
+        SetGauge("Altitude", new Vector3(110f, 150f, 0f));
+        SetGauge("Bearing", new Vector3(0f, 200f, 0f));
+        SetGauge("Artificial Horizon", new Vector3(0f, 150f, 0f));
     }
 
-    private void SetLocalPosition(string childName, Vector3 localPosition)
+    // Places a gauge at its offset from the view center, adjusted by the HUD info panel settings.
+    private void SetGauge(string childName, Vector3 localPosition)
     {
         var child = GetChild(childName);
         if (child == null)
@@ -29,7 +31,14 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
             return;
         }
 
-        child.localPosition = localPosition;
+        if (!_baseScales.TryGetValue(child, out var baseScale))
+        {
+            baseScale = child.localScale;
+            _baseScales[child] = baseScale;
+        }
+
+        child.localPosition = HudInfoPanelSettings.ApplySpread(localPosition);
+        child.localScale = baseScale * HudInfoPanelSettings.Scale;
     }
 
     private void SetLocalPositionRotationAndScale(

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NOVR.VrUi.HarmonyPatches;
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,6 +7,23 @@ namespace NOVR.VrUi.SpecialBehavior;
 
 public class NOVRFlightHudBehavior : UIRenderedCanvasBehavior
 {
+    private readonly struct MovedPanel
+    {
+        public MovedPanel(Transform transform, Vector3 localPosition, Vector3 localScale)
+        {
+            Transform = transform;
+            LocalPosition = localPosition;
+            LocalScale = localScale;
+        }
+
+        public Transform Transform { get; }
+        public Vector3 LocalPosition { get; }
+        public Vector3 LocalScale { get; }
+    }
+
+    // Panels moved onto the HUD, with their layout at scale/spread 1.0, so the settings can be applied live.
+    private readonly List<MovedPanel> _movedPanels = new();
+
     public override void Awake()
     {
         base.Awake();
@@ -37,6 +55,14 @@ public class NOVRFlightHudBehavior : UIRenderedCanvasBehavior
     {
         transform.position = new Vector3(0f, 0f, VrHudProjectionHelper.HudDistance);
         transform.rotation = Quaternion.identity;
+
+        var scale = HudInfoPanelSettings.Scale;
+        foreach (var panel in _movedPanels)
+        {
+            if (panel.Transform == null) continue;
+            panel.Transform.localPosition = HudInfoPanelSettings.ApplySpread(panel.LocalPosition);
+            panel.Transform.localScale = panel.LocalScale * scale;
+        }
     }
     
     private void MoveHmdPanelToHud(string panelName, Transform noVrHudParent, Vector3 localPosition, Vector3 localScale)
@@ -52,6 +78,7 @@ public class NOVRFlightHudBehavior : UIRenderedCanvasBehavior
         panel.localPosition = localPosition;
         panel.localEulerAngles = Vector3.zero;
         panel.localScale = localScale;
+        _movedPanels.Add(new MovedPanel(panel, localPosition, localScale));
         MakePanelInvisible(panel);
         
         if (panelName == "TopRightPanel")

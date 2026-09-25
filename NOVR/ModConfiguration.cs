@@ -32,6 +32,8 @@ public class ModConfiguration
     public readonly ConfigEntry<bool> SavePositionTrigger;
     public readonly ConfigEntry<float> MapClickMaxRadius;
     public readonly ConfigEntry<float> HudMinimapOpacity;
+    public readonly ConfigEntry<float> HudInfoPanelScale;
+    public readonly ConfigEntry<float> HudInfoPanelSpread;
 
     private readonly Dictionary<string, (ConfigEntry<float> Forward, ConfigEntry<float> Right)> _perPlaneEntries = new();
 
@@ -166,6 +168,25 @@ public class ModConfiguration
             1.0f,
             "Opacity of the in-cockpit minimap (the small map in the HUD, not the full clickable map). " +
             "1.0 is fully opaque, 0.0 hides it completely. Applies only when the minimap is shown; the full map view is unaffected.");
+
+        HudInfoPanelScale = config.Bind(
+            "HUD",
+            "Info Panel Scale",
+            1.0f,
+            new ConfigDescription(
+                "Size of the HUD's fixed info panels: weapons and countermeasures, the lower-left panel, the speed/altitude/heading gauges " +
+                "and the status display. Markers drawn over the world (flight path, pitch ladder, target boxes) are not affected, " +
+                "so they stay lined up with what they point at.",
+                new AcceptableValueRange<float>(0.5f, 2.0f)));
+
+        HudInfoPanelSpread = config.Bind(
+            "HUD",
+            "Info Panel Spread",
+            1.0f,
+            new ConfigDescription(
+                "How far the same info panels sit from the center of the HUD. Lower values pull them toward the center, " +
+                "which helps on headsets with a narrower field of view.",
+                new AcceptableValueRange<float>(0.5f, 1.5f)));
 
         SavePositionTrigger.SettingChanged += (_, _) =>
         {
