@@ -62,7 +62,7 @@ If the game is already running while installing or rebuilding, Windows may preve
 
 ### Recentering the view
 
-Press **Home** to recenter your view, in the cockpit or in menus. In NOVR's own menus the recenter happens after a short countdown so you have time to face forward. The key can be changed with `Recenter Key` in `BepInEx/config/deltawing.novr.cfg`.
+Press **F9** to recenter your view, in the cockpit or in menus. The recenter happens after a short countdown so you have time to face forward. In flight you can also use **RECENTER VIEW** in the pause menu. The key can be changed with `Recenter Shortcut` in `BepInEx/config/deltawing.novr.cfg`; HOTAS users can map a stick button to it with their joystick software.
 
 ### Linux/Proton notes
 
