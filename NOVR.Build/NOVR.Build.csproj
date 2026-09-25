@@ -25,6 +25,9 @@
   <Target Name="CreateReleaseZip" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <MakeDir Directories="$(ReleasePackageDistDir)" />
     <Delete Files="$(ReleasePackagePath)" />
+    <!-- The MCP bridge is a dev-only debugging server and must never ship; remove it if a local build staged it. -->
+    <RemoveDir Directories="$(ReleasePackageSourceDir)/plugins/NOVR.McpBridge" />
+    <Delete Files="$(ReleasePackageSourceDir)/plugins/NOVR/NOVR.McpBridge.dll" />
     <ZipDirectory SourceDirectory="$(ReleasePackageSourceDir)" DestinationFile="$(ReleasePackagePath)" Overwrite="true" />
   </Target>
 </Project>

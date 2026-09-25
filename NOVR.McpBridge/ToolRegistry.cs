@@ -171,7 +171,7 @@ public static class ToolRegistry
         if (value is bool b) return b ? "true" : "false";
         if (value is int || value is long || value is short || value is byte ||
             value is float || value is double || value is decimal)
-            return Convert.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
         if (value is IEnumerable<KeyValuePair<string, object?>> dict)
         {
             var sb = new StringBuilder("{");

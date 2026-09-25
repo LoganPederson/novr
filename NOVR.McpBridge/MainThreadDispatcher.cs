@@ -11,6 +11,9 @@ public sealed class MainThreadDispatcher : MonoBehaviour
     private static MainThreadDispatcher? _instance;
     private readonly ConcurrentQueue<Action> _queue = new();
 
+    // Work waiting for the next frame; the HTTP server refuses new requests when this backs up.
+    public int PendingCount => _queue.Count;
+
     public static MainThreadDispatcher Instance
     {
         get

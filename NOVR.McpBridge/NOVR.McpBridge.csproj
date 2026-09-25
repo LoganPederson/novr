@@ -9,8 +9,9 @@
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
         <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
         <DebugType>none</DebugType>
-        <OutputPath>$(BuildOutputDir)/plugins</OutputPath>
-        <GameDeployPath>$(NuclearOptionPluginDeployPath)</GameDeployPath>
+        <!-- Dev-only tool: its own output and plugin folder, never mixed into the NOVR release zip (see NOVR.Build.csproj). -->
+        <OutputPath>$(BuildOutputDir)/mcpbridge</OutputPath>
+        <GameDeployPath>BepInEx/plugins/NOVR.McpBridge</GameDeployPath>
         <RootNamespace>NOVR.McpBridge</RootNamespace>
         <AssemblyName>NOVR.McpBridge</AssemblyName>
         <NoWarn>CS1591</NoWarn>

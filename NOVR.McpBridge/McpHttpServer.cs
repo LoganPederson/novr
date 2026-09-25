@@ -7,15 +7,28 @@ using System.Threading.Tasks;
 
 namespace NOVR.McpBridge;
 
+// Local-only HTTP bridge for development tools. Hardened because it runs inside the game:
+// - binds loopback only;
+// - rejects browser requests (any Origin header) and Host names other than localhost, so web pages can't reach it
+//   through cross-site requests or DNS rebinding;
+// - requires the access token from the plugin config on every request except /health;
+// - caps request size, JSON nesting depth and queued main-thread work so a caller can't stall or crash the game.
 public sealed class McpHttpServer : IDisposable
 {
+    public const string TokenHeader = "X-NOVR-Token";
+    private const int MaxBodyChars = 64 * 1024;
+    private const int MaxJsonDepth = 32;
+    private const int MaxPendingInvocations = 16;
+
     private readonly HttpListener _listener = new();
     private readonly int _port;
+    private readonly string _token;
     private bool _running;
 
-    public McpHttpServer(int port)
+    public McpHttpServer(int port, string token)
     {
         _port = port;
+        _token = token;
     }
 
     public void Start()
@@ -45,6 +58,12 @@ public sealed class McpHttpServer : IDisposable
                 _ = HandleRequest(ctx);
             }
             catch when (!_running) { break; }
+            catch (Exception ex)
+            {
+                // Keep serving after a bad connection instead of silently stopping.
+                UnityEngine.Debug.LogWarning($"[NOVR.McpBridge] Listener error: {ex.Message}");
+                await Task.Delay(100);
+            }
         }
     }
 
@@ -54,6 +73,13 @@ public sealed class McpHttpServer : IDisposable
         {
             var rawUrl = ctx.Request.Url?.AbsolutePath?.Trim('/') ?? "";
             ctx.Response.ContentType = "application/json";
+
+            var rejection = CheckRequest(ctx.Request, rawUrl);
+            if (rejection != null)
+            {
+                await JsonResponse(ctx, rejection.Value.status, $"{{\"error\":\"{rejection.Value.message}\"}}");
+                return;
+            }
 
             switch (rawUrl)
             {
@@ -84,6 +110,52 @@ public sealed class McpHttpServer : IDisposable
         }
     }
 
+    private (int status, string message)? CheckRequest(HttpListenerRequest request, string path)
+    {
+        // Browsers always send Origin on cross-site requests; local dev tools don't.
+        if (!string.IsNullOrEmpty(request.Headers["Origin"]))
+            return (403, "Browser requests are not allowed");
+
+        // A DNS-rebinding page reaches us under its own host name; only accept loopback names.
+        var host = request.Headers["Host"] ?? "";
+        if (host != $"localhost:{_port}" && host != $"127.0.0.1:{_port}")
+            return (403, "Unexpected Host header");
+
+        if (path == "health")
+            return null;
+
+        if (!TokenMatches(request.Headers[TokenHeader]))
+            return (401, $"Missing or wrong {TokenHeader} header; the token is in BepInEx/config/deltawing.novr.mcpbridge.cfg");
+
+        return null;
+    }
+
+    // Constant-time comparison so the token can't be recovered by timing responses.
+    private bool TokenMatches(string? supplied)
+    {
+        if (supplied == null || supplied.Length != _token.Length) return false;
+        var difference = 0;
+        for (var i = 0; i < _token.Length; i++)
+            difference |= supplied[i] ^ _token[i];
+        return difference == 0;
+    }
+
+    private static int MaxNestingDepth(string json)
+    {
+        var depth = 0;
+        var max = 0;
+        var inString = false;
+        for (var i = 0; i < json.Length; i++)
+        {
+            var c = json[i];
+            if (c == '"' && (i == 0 || json[i - 1] != '\\')) inString = !inString;
+            if (inString) continue;
+            if (c == '{' || c == '[') max = Math.Max(max, ++depth);
+            else if (c == '}' || c == ']') depth--;
+        }
+        return max;
+    }
+
     private async Task HandleGetTools(HttpListenerContext ctx)
     {
         var sb = new StringBuilder("[");
@@ -109,10 +181,40 @@ public sealed class McpHttpServer : IDisposable
 
     private async Task HandleInvoke(HttpListenerContext ctx)
     {
+        if (ctx.Request.ContentLength64 > MaxBodyChars)
+        {
+            await JsonResponse(ctx, 413, "{\"error\":\"Request too large\"}");
+            return;
+        }
+
+        // Read at most MaxBodyChars + 1 so a missing or false Content-Length can't make us buffer without limit.
         string body;
         using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
         {
-            body = await reader.ReadToEndAsync();
+            var buffer = new char[MaxBodyChars + 1];
+            var read = 0;
+            int count;
+            while (read < buffer.Length && (count = await reader.ReadAsync(buffer, read, buffer.Length - read)) > 0)
+                read += count;
+            if (read > MaxBodyChars)
+            {
+                await JsonResponse(ctx, 413, "{\"error\":\"Request too large\"}");
+                return;
+            }
+            body = new string(buffer, 0, read);
+        }
+
+        // The parser below is recursive; bound nesting so a crafted body can't overflow the stack.
+        if (MaxNestingDepth(body) > MaxJsonDepth)
+        {
+            await JsonResponse(ctx, 400, "{\"error\":\"JSON nested too deeply\"}");
+            return;
+        }
+
+        if (MainThreadDispatcher.Instance.PendingCount >= MaxPendingInvocations)
+        {
+            await JsonResponse(ctx, 503, "{\"error\":\"Busy; retry shortly\"}");
+            return;
         }
 
         var (toolName, args) = ParseInvokeRequest(body);
