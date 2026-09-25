@@ -66,7 +66,7 @@ Press **F9** to recenter your view, in the cockpit or in menus. The recenter hap
 
 ### Hand tracking for menus
 
-If your headset tracks hands and your OpenXR runtime supports `XR_EXT_hand_tracking` (for example Virtual Desktop's VDXR or Meta Quest Link), you can use menus without controllers: raise a hand in front of you, point, and pinch your thumb and index finger to click. Hands resting low, such as on a stick and throttle, are ignored, so they can't click by accident. Adjust `Hand Raise Height` in the config if your HOTAS sits unusually high or pointing is hard to start, or turn `Hand Tracking` off entirely.
+If your headset tracks hands and your OpenXR runtime supports `XR_EXT_hand_tracking` (for example Virtual Desktop's VDXR or Meta Quest Link), you can use menus without controllers. With Virtual Desktop, turn on **Forward tracking data** in its Streaming tab first. Then raise a hand in front of you, point, and pinch your thumb and index finger to click. Hands resting low, such as on a stick and throttle, are ignored, so they can't click by accident. Adjust `Hand Raise Height` in the config if your HOTAS sits unusually high or pointing is hard to start, or turn `Hand Tracking` off entirely.
 
 ### Linux/Proton notes
 

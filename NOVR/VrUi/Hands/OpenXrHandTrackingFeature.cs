@@ -138,7 +138,7 @@ public class OpenXrHandTrackingFeature : OpenXRFeature
         _loggedStartFailure = true;
         Log($"xrCreateHandTrackerEXT failed (left XrResult {leftResult}, right XrResult {rightResult}). " +
             $"Retrying every {StartRetryIntervalSeconds:0} seconds. -8 means the runtime says hand tracking isn't available right now; " +
-            "check that hand tracking is turned on in the headset's settings, and put the controllers down so it switches to hands.");
+            "check that hand tracking is on in the headset's settings (Virtual Desktop: enable \"Forward tracking data\" in the Streaming tab), and put the controllers down so it switches to hands.");
     }
 
     protected override void OnAppSpaceChange(ulong xrSpace)
