@@ -1,3 +1,4 @@
+using HarmonyLib;
 using NOVR.VrUi.SpecialBehavior;
 using System.Collections.Generic;
 using NuclearOption.Networking;
@@ -132,26 +133,26 @@ public class NativeVrUiRoot : NOVRBehaviour
         }
 
         var mainCanvasActive = _mainCanvas != null && _mainCanvas.activeInHierarchy;
-        var controlMapperOpen = IsControlMapperOpen();
+        var stockMenuOpen = IsStockOnlyMenuOpen();
         var topLevelMainMenuAvailable = _actions.IsTopLevelMainMenuAvailable;
         var waitingForSinglePlayerMissionPicker = _singlePlayerMissionPickerRequested &&
                                                   Time.unscaledTime - _singlePlayerMissionPickerRequestTime < RequestedMenuTransitionSeconds;
         var waitingForMultiplayer = _multiplayerRequested &&
                                     Time.unscaledTime - _multiplayerRequestTime < RequestedMenuTransitionSeconds;
         var shouldShowSinglePlayerMissionPicker = _singlePlayerMissionPickerRequested &&
-                                                  !controlMapperOpen &&
+                                                  !stockMenuOpen &&
                                                   mainCanvasActive &&
                                                   (waitingForSinglePlayerMissionPicker ||
                                                    !topLevelMainMenuAvailable ||
                                                    IsMissionPickerAvailable());
         var shouldShowMultiplayer = _multiplayerRequested &&
-                                    !controlMapperOpen &&
+                                    !stockMenuOpen &&
                                     mainCanvasActive &&
                                     (waitingForMultiplayer ||
                                      !topLevelMainMenuAvailable ||
                                      IsMultiplayerMenuAvailable());
         var shouldShowSettings = _settingsRequested &&
-                                 !controlMapperOpen &&
+                                 !stockMenuOpen &&
                                  mainCanvasActive &&
                                  IsSettingsMenuAvailable();
         var waitingForSettingsMenu = _settingsRequested &&
@@ -160,17 +161,17 @@ public class NativeVrUiRoot : NOVRBehaviour
         var waitingForWorkshop = _workshopRequested &&
                                  Time.unscaledTime - _workshopRequestTime < RequestedMenuTransitionSeconds;
         var shouldShowWorkshop = _workshopRequested &&
-                                 !controlMapperOpen &&
+                                 !stockMenuOpen &&
                                  mainCanvasActive &&
                                  (waitingForWorkshop ||
                                   !topLevelMainMenuAvailable ||
                                   IsWorkshopMenuAvailable());
         var shouldShowVrUiSettings = _vrUiSettingsOpen &&
-                                     !controlMapperOpen &&
+                                     !stockMenuOpen &&
                                      mainCanvasActive &&
                                      topLevelMainMenuAvailable;
         var shouldShowMainMenu = mainCanvasActive &&
-                                 !controlMapperOpen &&
+                                 !stockMenuOpen &&
                                  topLevelMainMenuAvailable &&
                                  !shouldShowSinglePlayerMissionPicker &&
                                  !shouldShowMultiplayer &&
@@ -196,7 +197,7 @@ public class NativeVrUiRoot : NOVRBehaviour
         _vrUiSettingsPanel?.SetVisible(shouldShowVrUiSettings);
 
         var shouldShowNativeUi = shouldShowMainMenu || shouldShowSinglePlayerMissionPicker || shouldShowMultiplayer || shouldShowSettings || shouldShowWorkshop || shouldShowVrUiSettings;
-        var shouldKeepEnvironmentForMenuTransition = !controlMapperOpen &&
+        var shouldKeepEnvironmentForMenuTransition = !stockMenuOpen &&
                                                      (waitingForSinglePlayerMissionPicker ||
                                                       waitingForMultiplayer ||
                                                       waitingForSettingsMenu ||
@@ -590,7 +591,7 @@ public class NativeVrUiRoot : NOVRBehaviour
 
     private bool ShouldShowStockNativeUiToggle()
     {
-        if (_mainCanvas == null || !_mainCanvas.activeInHierarchy || IsControlMapperOpen())
+        if (_mainCanvas == null || !_mainCanvas.activeInHierarchy || IsStockOnlyMenuOpen())
         {
             return false;
         }
@@ -753,6 +754,37 @@ public class NativeVrUiRoot : NOVRBehaviour
     private static bool IsControlMapperOpen()
     {
         return GameManager.controlMapper != null && GameManager.controlMapper.isOpen;
+    }
+
+    private static readonly AccessTools.FieldRef<global::CustomizeMissionMenu, GameObject> CustomizeMissionHolderField =
+        AccessTools.FieldRefAccess<global::CustomizeMissionMenu, GameObject>("holder");
+    private global::CustomizeMissionMenu[] _customizeMissionMenus = System.Array.Empty<global::CustomizeMissionMenu>();
+    private float _nextCustomizeMissionScanTime;
+
+    // Game menus the native UI has no replacement for. While one is open, the native UI steps aside and the
+    // original menu is shown instead, so its content isn't opened invisibly behind the native panels.
+    private bool IsStockOnlyMenuOpen() => IsControlMapperOpen() || IsCustomizeMissionOpen();
+
+    // "Customize Mission" (single player and multiplayer lobby setup) opens CustomizeMissionMenu's holder panel
+    // inside the original MainCanvas, which the native UI hides, so the button appeared to do nothing.
+    private bool IsCustomizeMissionOpen()
+    {
+        if (_mainCanvas == null) return false;
+
+        if (Time.unscaledTime >= _nextCustomizeMissionScanTime)
+        {
+            _nextCustomizeMissionScanTime = Time.unscaledTime + MainMenuScanIntervalSeconds;
+            _customizeMissionMenus = _mainCanvas.GetComponentsInChildren<global::CustomizeMissionMenu>(true);
+        }
+
+        foreach (var menu in _customizeMissionMenus)
+        {
+            if (menu == null) continue;
+            var holder = CustomizeMissionHolderField(menu);
+            if (holder != null && holder.activeInHierarchy) return true;
+        }
+
+        return false;
     }
 
     private void OnNativeActionInvoked(NativeGameAction action)
