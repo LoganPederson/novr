@@ -42,6 +42,9 @@ public class OpenXrHandTrackingFeature : OpenXRFeature
     private IntPtr _leftJointBuffer;
     private IntPtr _rightJointBuffer;
     private bool _loggedLocateFailure;
+    private bool _loggedStartFailure;
+    private float _nextStartAttempt;
+    private const float StartRetryIntervalSeconds = 3f;
 
     private CreateHandTrackerDelegate? _createHandTracker;
     private DestroyHandTrackerDelegate? _destroyHandTracker;
@@ -99,20 +102,43 @@ public class OpenXrHandTrackingFeature : OpenXRFeature
     protected override void OnSessionCreate(ulong xrSession)
     {
         _session = xrSession;
+        _nextStartAttempt = 0f;
+        _loggedStartFailure = false;
+        // Runtimes such as VDXR can report hand tracking as unsupported (XR_ERROR_FEATURE_UNSUPPORTED) until the
+        // headset is actually streaming hand data, so a failure here is retried later by EnsureStarted.
+        TryStartTracking();
+    }
+
+    // Called every frame from the main thread; retries starting hand tracking while it isn't running.
+    public void EnsureStarted()
+    {
+        if (IsRunning || _session == 0 || _createHandTracker == null) return;
+        if (Time.unscaledTime < _nextStartAttempt) return;
+
+        _nextStartAttempt = Time.unscaledTime + StartRetryIntervalSeconds;
+        TryStartTracking();
+    }
+
+    private void TryStartTracking()
+    {
         if (_createHandTracker == null) return;
 
-        _leftTracker = CreateTracker(XrHandLeft);
-        _rightTracker = CreateTracker(XrHandRight);
+        var leftResult = CreateTracker(XrHandLeft, out _leftTracker);
+        var rightResult = CreateTracker(XrHandRight, out _rightTracker);
         if (_leftTracker != 0 && _rightTracker != 0)
         {
             _leftJointBuffer = Marshal.AllocHGlobal(JointCount * Marshal.SizeOf<XrHandJointLocation>());
             _rightJointBuffer = Marshal.AllocHGlobal(JointCount * Marshal.SizeOf<XrHandJointLocation>());
             Log($"Hand tracking started on {OpenXRRuntime.name}.");
+            return;
         }
-        else
-        {
-            DestroyTrackers();
-        }
+
+        DestroyTrackers();
+        if (_loggedStartFailure) return;
+        _loggedStartFailure = true;
+        Log($"xrCreateHandTrackerEXT failed (left XrResult {leftResult}, right XrResult {rightResult}). " +
+            $"Retrying every {StartRetryIntervalSeconds:0} seconds. -8 means the runtime says hand tracking isn't available right now; " +
+            "check that hand tracking is turned on in the headset's settings, and put the controllers down so it switches to hands.");
     }
 
     protected override void OnAppSpaceChange(ulong xrSpace)
@@ -187,7 +213,7 @@ public class OpenXrHandTrackingFeature : OpenXRFeature
         return true;
     }
 
-    private ulong CreateTracker(int hand)
+    private int CreateTracker(int hand, out ulong tracker)
     {
         var createInfo = new XrHandTrackerCreateInfo
         {
@@ -196,15 +222,9 @@ public class OpenXrHandTrackingFeature : OpenXRFeature
             HandJointSet = XrHandJointSetDefault
         };
 
-        var result = _createHandTracker!(_session, ref createInfo, out var tracker);
-        if (result != XrSuccess)
-        {
-            Log($"xrCreateHandTrackerEXT failed for the {(hand == XrHandLeft ? "left" : "right")} hand with XrResult {result}; " +
-                "hand tracking is unavailable. Check that hand tracking is enabled for your headset and runtime.");
-            return 0;
-        }
-
-        return tracker;
+        var result = _createHandTracker!(_session, ref createInfo, out tracker);
+        if (result != XrSuccess) tracker = 0;
+        return result;
     }
 
     private void DestroyTrackers()

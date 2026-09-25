@@ -71,6 +71,7 @@ internal static class HandPointer
 
         var feature = OpenXrHandTrackingFeature.Instance;
         var enabled = ModConfiguration.Instance?.EnableHandTracking.Value ?? false;
+        if (enabled) feature?.EnsureStarted();
         if (!enabled || feature == null || !feature.IsRunning)
         {
             Reset(Left);
