@@ -114,6 +114,9 @@ public class VrUiCursor: NOVRBehaviour
     private PointerEventData? _pointerEventData;
     private GameObject? _hovered;
     private GameObject? _pointerPress;
+    // Set when a press already clicked a map icon directly (e.g. a spawn airbase), so releasing the same
+    // press doesn't also click whatever icon is drawn on top of it.
+    private bool _suppressNextPointerClick;
     private bool _wasLeftDown;
 
     // Standard UI input module references — disabled normally, re-enabled when the
@@ -396,9 +399,6 @@ public class VrUiCursor: NOVRBehaviour
 
         if (_activeCanvas == null || !_hasActiveCanvas) return;
 
-        var raycaster = _activeCanvas.GetComponent<GraphicRaycaster>();
-        if (raycaster == null) return;
-
         var ped = _pointerEventData;
         if (ped == null)
         {
@@ -410,8 +410,8 @@ public class VrUiCursor: NOVRBehaviour
         ped.delta = Vector2.zero;
         ped.button = PointerEventData.InputButton.Left;
 
-        var results = new List<RaycastResult>();
-        raycaster.Raycast(ped, results);
+        var results = RaycastCanvasHierarchy(_activeCanvas, ped);
+        if (results == null) return;
 
         // Get the event root (the ancestor that has Selectable or IPointerClickHandler)
         GameObject? current = null;
@@ -473,7 +473,7 @@ public class VrUiCursor: NOVRBehaviour
             if (_pointerPress != null)
             {
                 ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.pointerUpHandler);
-                if (_pointerPress == current)
+                if (_pointerPress == current && !_suppressNextPointerClick)
                 {
                     ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.pointerClickHandler);
                     ped.clickCount++;
@@ -484,9 +484,56 @@ public class VrUiCursor: NOVRBehaviour
                 }
             }
             _pointerPress = null;
+            _suppressNextPointerClick = false;
         }
 
         _wasLeftDown = isLeftDown;
+    }
+
+    private readonly List<GraphicRaycaster> _raycasterBuffer = new();
+    private readonly List<RaycastResult> _raycastResults = new();
+    private readonly List<RaycastResult> _raycasterResults = new();
+
+    // Raycasts every GraphicRaycaster under the canvas's root, topmost first. A GraphicRaycaster only sees
+    // graphics on its own canvas, and popups such as a dropdown's option list (and its click-outside blocker)
+    // live on nested canvases with their own raycasters, so raycasting just the root canvas made their
+    // options unclickable.
+    private List<RaycastResult>? RaycastCanvasHierarchy(Canvas canvas, PointerEventData ped)
+    {
+        var root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+        root.GetComponentsInChildren(false, _raycasterBuffer);
+        if (_raycasterBuffer.Count == 0) return null;
+
+        _raycastResults.Clear();
+        foreach (var raycaster in _raycasterBuffer)
+        {
+            if (raycaster == null || !raycaster.isActiveAndEnabled) continue;
+
+            // A nested popup canvas without a camera would make its raycaster fall back to Camera.main
+            // (the flat game camera) and miss; give it the root canvas's UI camera.
+            var raycasterCanvas = raycaster.GetComponent<Canvas>();
+            if (raycasterCanvas != null && raycasterCanvas != root && raycasterCanvas.worldCamera == null)
+                raycasterCanvas.worldCamera = root.worldCamera;
+
+            _raycasterResults.Clear();
+            raycaster.Raycast(ped, _raycasterResults);
+            _raycastResults.AddRange(_raycasterResults);
+        }
+
+        _raycastResults.Sort(CompareRaycastResults);
+        return _raycastResults;
+    }
+
+    // Same ordering the EventSystem uses between canvases: sorting layer, then order, then depth.
+    private static int CompareRaycastResults(RaycastResult a, RaycastResult b)
+    {
+        if (a.sortingLayer != b.sortingLayer)
+            return SortingLayer.GetLayerValueFromID(b.sortingLayer).CompareTo(SortingLayer.GetLayerValueFromID(a.sortingLayer));
+        if (a.sortingOrder != b.sortingOrder)
+            return b.sortingOrder.CompareTo(a.sortingOrder);
+        if (a.depth != b.depth)
+            return b.depth.CompareTo(a.depth);
+        return a.index.CompareTo(b.index);
     }
 
     private static GameObject? GetEventRoot(GameObject? obj)
@@ -839,6 +886,15 @@ public class VrUiCursor: NOVRBehaviour
         global::MapIcon? closest = null;
         float closestSqr = float.MaxValue;
 
+        // While choosing where to spawn, the airbase is almost always what you mean, but unit icons crowd around
+        // it and win on distance. Airbases get a wider priority radius then, using the same "no live aircraft"
+        // test AirbaseMapIcon.ClickIcon uses to decide it's a spawn selection.
+        var choosingSpawn = IsChoosingSpawn();
+        float airbaseRadius = maxRadius * AirbaseSpawnPriorityRadiusMultiplier;
+        float airbaseRadiusSqr = airbaseRadius * airbaseRadius;
+        global::AirbaseMapIcon? closestAirbase = null;
+        float closestAirbaseSqr = float.MaxValue;
+
         foreach (var icon in icons)
         {
             if (icon == null || !icon.gameObject.activeInHierarchy) continue;
@@ -858,9 +914,31 @@ public class VrUiCursor: NOVRBehaviour
                 closestSqr = sqr;
                 closest = icon;
             }
+
+            if (choosingSpawn && icon is global::AirbaseMapIcon airbaseIcon && sqr < closestAirbaseSqr)
+            {
+                closestAirbaseSqr = sqr;
+                closestAirbase = airbaseIcon;
+            }
+        }
+
+        if (closestAirbase != null && closestAirbaseSqr <= airbaseRadiusSqr)
+        {
+            closestAirbase.ClickIcon(global::MapIcon.ClickSource.Mouse);
+            _suppressNextPointerClick = true;
+            return;
         }
 
         if (closest != null && closestSqr <= maxRadiusSqr)
             closest.ClickIcon(global::MapIcon.ClickSource.Mouse);
+    }
+
+    private const float AirbaseSpawnPriorityRadiusMultiplier = 3f;
+
+    private static bool IsChoosingSpawn()
+    {
+        var combatHud = global::SceneSingleton<global::CombatHUD>.i;
+        var aircraft = combatHud != null ? combatHud.aircraft : null;
+        return aircraft == null || aircraft.disabled;
     }
 }
