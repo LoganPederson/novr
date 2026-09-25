@@ -1,3 +1,4 @@
+using NOVR.VrUi.HarmonyPatches;
 using HarmonyLib;
 using NOVR.PatchHelper;
 using UnityEngine;
@@ -25,7 +26,7 @@ internal static class HUDTurretCrosshairPatch
         var crosshairDirection = APIBus.MainCamera.transform.InverseTransformDirection(direction);
         crosshairDirection = APIBus.CockpitHudCamera.transform.TransformDirection(crosshairDirection);
         
-        crosshairPosition = crosshairDirection * 1000f;
+        crosshairPosition = crosshairDirection * VrHudProjectionHelper.HudDistance;
         crosshair.gameObject.transform.position = crosshairPosition;
         crosshair.gameObject.transform.rotation = Quaternion.LookRotation(crosshairDirection);
         crosshair.enabled = true;

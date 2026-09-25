@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -5,30 +6,47 @@ namespace NOVR.VrCamera;
 
 internal static class TurretVrCameraPatch
 {
-    [HarmonyPatch(typeof(Turret), "FixedUpdate")]
+    [HarmonyPatch(typeof(global::Turret), "FixedUpdate")]
     private static class FixedUpdatePatch
     {
+        // Runs for every turret every physics tick, so use compiled field accessors instead of Traverse.
+        private static readonly AccessTools.FieldRef<global::Turret, bool> ManualField =
+            AccessTools.FieldRefAccess<global::Turret, bool>("manual");
+        private static readonly AccessTools.FieldRef<global::Turret, global::Unit> TargetField =
+            AccessTools.FieldRefAccess<global::Turret, global::Unit>("target");
+        private static readonly AccessTools.FieldRef<global::Turret, global::Aircraft> AircraftField =
+            AccessTools.FieldRefAccess<global::Turret, global::Aircraft>("aircraft");
+        private static readonly AccessTools.FieldRef<global::Turret, global::Unit> AttachedUnitField =
+            AccessTools.FieldRefAccess<global::Turret, global::Unit>("attachedUnit");
+        private static readonly AccessTools.FieldRef<global::Turret, float> LastVectorSentField =
+            AccessTools.FieldRefAccess<global::Turret, float>("lastVectorSent");
+        private static readonly AccessTools.FieldRef<global::Turret, global::WeaponStation> CurrentWeaponStationField =
+            AccessTools.FieldRefAccess<global::Turret, global::WeaponStation>("currentWeaponStation");
+        private static readonly AccessTools.FieldRef<global::Turret, Vector3> ManualVectorField =
+            AccessTools.FieldRefAccess<global::Turret, Vector3>("manualVector");
+        private static readonly Action<global::Turret, Vector3> AimTurret =
+            AccessTools.MethodDelegate<Action<global::Turret, Vector3>>(
+                AccessTools.Method(typeof(global::Turret), "AimTurret", new[] { typeof(Vector3) }));
+
         [HarmonyPrefix]
-        private static bool Prefix(Turret __instance)
+        private static bool Prefix(global::Turret __instance)
         {
             if (__instance == null)
             {
                 return true;
             }
 
-            var turret = Traverse.Create(__instance);
-            if (!turret.Field("manual").GetValue<bool>() ||
-                turret.Field("target").GetValue<Unit>() != null)
+            if (!ManualField(__instance) || TargetField(__instance) != null)
             {
                 return true;
             }
 
-            var aircraft = turret.Field("aircraft").GetValue<Aircraft>();
-            var attachedUnit = turret.Field("attachedUnit").GetValue<Unit>();
+            var aircraft = AircraftField(__instance);
+            var attachedUnit = AttachedUnitField(__instance);
             if (aircraft == null ||
                 attachedUnit == null ||
                 !aircraft.LocalSim ||
-                SceneSingleton<CameraStateManager>.i.currentState != SceneSingleton<CameraStateManager>.i.cockpitState)
+                global::SceneSingleton<global::CameraStateManager>.i.currentState != global::SceneSingleton<global::CameraStateManager>.i.cockpitState)
             {
                 return true;
             }
@@ -41,16 +59,16 @@ internal static class TurretVrCameraPatch
 
             __instance.SetVector(vrCamera.transform.forward);
 
-            var lastVectorSent = turret.Field("lastVectorSent").GetValue<float>();
+            var lastVectorSent = LastVectorSentField(__instance);
             if (Time.timeSinceLevelLoad - lastVectorSent > 0.20000000298023224)
             {
-                var currentWeaponStation = turret.Field("currentWeaponStation").GetValue<WeaponStation>();
-                var manualVector = turret.Field("manualVector").GetValue<Vector3>();
+                var currentWeaponStation = CurrentWeaponStationField(__instance);
+                var manualVector = ManualVectorField(__instance);
                 aircraft.SetTurretVector(currentWeaponStation.Number, manualVector);
-                turret.Field("lastVectorSent").SetValue(Time.timeSinceLevelLoad);
+                LastVectorSentField(__instance) = Time.timeSinceLevelLoad;
             }
 
-            turret.Method("AimTurret", turret.Field("manualVector").GetValue<Vector3>()).GetValue();
+            AimTurret(__instance, ManualVectorField(__instance));
             return false;
         }
     }

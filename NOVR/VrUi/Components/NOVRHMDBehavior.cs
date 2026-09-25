@@ -1,19 +1,20 @@
+using System.Collections.Generic;
+using NOVR.VrUi.HarmonyPatches;
 using UnityEngine;
 
 namespace NOVR.VrUi.SpecialBehavior;
 
 public class NOVRHMDBehavior : UIRenderedCanvasBehavior
 {
-    
-    
-    private float _offset = 1000;
+    // Children are looked up by name once and cached; the recursive search used to run four times a frame.
+    private readonly Dictionary<string, Transform> _childCache = new();
 
     private void Update()
     {
         var uiCam = APIBus.CockpitHudReference;
-        transform.position = uiCam.transform.forward * _offset;
+        transform.position = uiCam.transform.forward * VrHudProjectionHelper.HudDistance;
         transform.rotation = uiCam.transform.rotation;
-        
+
         SetLocalPosition("Speed", new Vector3(-110f, 150f, 0f)); // TODO: Patch game files and use events to set these gameobjects
         SetLocalPosition("Altitude", new Vector3(110f, 150f, 0f));
         SetLocalPosition("Bearing", new Vector3(0f, 200f, 0f));
@@ -22,7 +23,7 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
 
     private void SetLocalPosition(string childName, Vector3 localPosition)
     {
-        var child = FindChildRecursive(transform, childName);
+        var child = GetChild(childName);
         if (child == null)
         {
             return;
@@ -37,7 +38,7 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
         Vector3 localEulerAngles,
         Vector3 localScale)
     {
-        var child = FindChildRecursive(transform, childName);
+        var child = GetChild(childName);
         if (child == null)
         {
             return;
@@ -48,7 +49,23 @@ public class NOVRHMDBehavior : UIRenderedCanvasBehavior
         child.localScale = localScale;
     }
 
-    private static Transform FindChildRecursive(Transform parent, string childName)
+    private Transform? GetChild(string childName)
+    {
+        if (_childCache.TryGetValue(childName, out var cached) && cached != null)
+        {
+            return cached;
+        }
+
+        var child = FindChildRecursive(transform, childName);
+        if (child != null)
+        {
+            _childCache[childName] = child;
+        }
+
+        return child;
+    }
+
+    private static Transform? FindChildRecursive(Transform parent, string childName)
     {
         for (var i = 0; i < parent.childCount; i++)
         {

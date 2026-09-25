@@ -1,3 +1,4 @@
+using NOVR.VrUi.HarmonyPatches;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -9,7 +10,7 @@ namespace NOVR.Patches.HUD;
 
 internal static class ThreatItemPatch
 {
-    private const float HudDistance = 1000.0f;
+    private const float HudDistance = VrHudProjectionHelper.HudDistance;
     private const float NotchIndicatorDistance = 1000.0f;
     private const float NotchIndicatorLineWidth = 1.0f;
     private const float NotchIndicatorLineHeight = 4096.0f;

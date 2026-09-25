@@ -1,3 +1,4 @@
+using NOVR.VrUi.HarmonyPatches;
 using System.Reflection;
 using HarmonyLib;
 using NOVR.PatchHelper;
@@ -7,7 +8,7 @@ namespace NOVR.Patches.HUD;
 
 internal static class FlightHudPatch
 {
-    private const float HudDistance = 1000.0f;
+    private const float HudDistance = VrHudProjectionHelper.HudDistance;
     private const float VelocityVectorProjectionDistance = 1000.0f;
     private static readonly FieldInfo CockpitTransformField = AccessTools.Field(typeof(global::FlightHud), "cockpitTransform");
     private static readonly FieldInfo CockpitRbField = AccessTools.Field(typeof(global::FlightHud), "cockpitRB");

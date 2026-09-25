@@ -1,3 +1,4 @@
+using NOVR.VrUi.HarmonyPatches;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -9,7 +10,7 @@ namespace NOVR.Patches.HUD;
 
 internal static class HUDBoresightStatePatch
 {
-    private const float HudDistance = 1000.0f;
+    private const float HudDistance = VrHudProjectionHelper.HudDistance;
     private static readonly FieldInfo ProjectedPositionField = AccessTools.Field(typeof(HUDBoresightState), "projectedPosition");
     private static readonly FieldInfo TargetPositionField = AccessTools.Field(typeof(HUDBoresightState), "targetPosition");
     private static readonly FieldInfo BoresightField = AccessTools.Field(typeof(HUDBoresightState), "boresight");

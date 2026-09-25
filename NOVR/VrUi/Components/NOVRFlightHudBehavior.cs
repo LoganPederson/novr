@@ -1,3 +1,4 @@
+using NOVR.VrUi.HarmonyPatches;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -34,7 +35,7 @@ public class NOVRFlightHudBehavior : UIRenderedCanvasBehavior
     
     private void Update()
     {
-        transform.position = new Vector3(0f, 0f, 1000f);
+        transform.position = new Vector3(0f, 0f, VrHudProjectionHelper.HudDistance);
         transform.rotation = Quaternion.identity;
     }
     

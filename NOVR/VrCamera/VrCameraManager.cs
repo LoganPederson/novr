@@ -17,21 +17,30 @@ public class VrCameraManager: MonoBehaviour
     private static readonly string[] TrackedChildNames = {"cockpitRenderer", "postProcessingRenderer"};
 
     public static HashSet<Camera> IgnoredCameras = new();
-    
+
+    private Camera[] _cameraBuffer = new Camera[16];
+
     private void Update() // Todo: Make me behave on events if possible
     {
-        Camera[] cameras = new Camera[Camera.allCamerasCount];
-        Camera.GetAllCameras(cameras);
-
-        foreach (var camera in cameras)
+        var cameraCount = Camera.allCamerasCount;
+        if (_cameraBuffer.Length < cameraCount)
         {
+            _cameraBuffer = new Camera[cameraCount * 2];
+        }
+        cameraCount = Camera.GetAllCameras(_cameraBuffer);
+
+        for (var i = 0; i < cameraCount; i++)
+        {
+            var camera = _cameraBuffer[i];
             var gameObject = camera.gameObject;
-            if (gameObject.name is not (NuclearOptionMainCameraName or NuclearOptionMenuCameraName))
+            // GameObject.name allocates a new string on every read, so read it once.
+            var cameraName = gameObject.name;
+            if (cameraName is not (NuclearOptionMainCameraName or NuclearOptionMenuCameraName))
             {
                 continue;
             }
 
-            if (gameObject.name == NuclearOptionMainCameraName)
+            if (cameraName == NuclearOptionMainCameraName)
             {
                 var existingTrackedCamera = GetTrackedMainCamera(gameObject);
                 if (existingTrackedCamera != null)
@@ -46,7 +55,7 @@ public class VrCameraManager: MonoBehaviour
                 continue;
             }
 
-            if (gameObject.name == NuclearOptionMainCameraName)
+            if (cameraName == NuclearOptionMainCameraName)
             {
                 SetUpMainCameraRig(camera);
             }
