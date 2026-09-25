@@ -38,37 +38,34 @@ public sealed class ProtonPrefixService
             : $"Could not configure winhttp automatically. Set winhttp to native,builtin manually for prefix: {prefix}";
     }
 
+    // Nuclear Option's Steam app id; Proton keeps each game's prefix in steamapps/compatdata/<appid>/pfx.
+    private const string NuclearOptionAppId = "2168680";
+
+    // Only ever returns Nuclear Option's own prefix. Picking another game's prefix would set winhttp to
+    // native,builtin there, making that game load any winhttp.dll in its folder.
     private static string? FindPrefix(string gameDir)
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var steamRoots = new[]
+        var candidates = new List<string>();
+
+        // The prefix lives in the same Steam library as the game: <library>/steamapps/common/Nuclear Option.
+        var steamApps = Directory.GetParent(Path.GetFullPath(gameDir))?.Parent;
+        if (steamApps is not null)
         {
-            Path.Combine(home, ".steam", "steam"),
-            Path.Combine(home, ".steam", "debian-installation"),
-            Path.Combine(home, ".local", "share", "Steam")
-        };
-
-        foreach (var root in steamRoots)
-        {
-            var compatData = Path.Combine(root, "steamapps", "compatdata");
-            if (!Directory.Exists(compatData))
-            {
-                continue;
-            }
-
-            var candidates = Directory.EnumerateDirectories(compatData)
-                .Select(dir => Path.Combine(dir, "pfx"))
-                .Where(Directory.Exists)
-                .OrderByDescending(Directory.GetLastWriteTimeUtc);
-
-            var best = candidates.FirstOrDefault();
-            if (best is not null)
-            {
-                return best;
-            }
+            candidates.Add(Path.Combine(steamApps.FullName, "compatdata", NuclearOptionAppId, "pfx"));
         }
 
-        return null;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        foreach (var root in new[]
+                 {
+                     Path.Combine(home, ".steam", "steam"),
+                     Path.Combine(home, ".steam", "debian-installation"),
+                     Path.Combine(home, ".local", "share", "Steam")
+                 })
+        {
+            candidates.Add(Path.Combine(root, "steamapps", "compatdata", NuclearOptionAppId, "pfx"));
+        }
+
+        return candidates.FirstOrDefault(Directory.Exists);
     }
 
     private static string? FindExecutable(string name)
