@@ -60,6 +60,10 @@ On game startup, the NOVR BepInEx patcher copies required XR support files into 
 
 If the game is already running while installing or rebuilding, Windows may prevent those files from being replaced. Close Nuclear Option before installing, updating, or building the mod.
 
+### Recentering the view
+
+Press **Home** to recenter your view, in the cockpit or in menus. In NOVR's own menus the recenter happens after a short countdown so you have time to face forward. The key can be changed with `Recenter Key` in `BepInEx/config/deltawing.novr.cfg`.
+
 ### Linux/Proton notes
 
 The installer tries to set the required `winhttp` override automatically. If BepInEx does not load under Proton, configure the game's Wine prefix manually so `winhttp` uses `native,builtin`.
@@ -73,11 +77,11 @@ These steps are for developers building NOVR from source.
 1. Install a .NET/MSBuild toolchain that can build SDK-style .NET Framework 4.8 projects.
     - **Windows:** Visual Studio 2022 or Build Tools for Visual Studio 2022 with the **.NET Framework 4.8 targeting pack** installed.
     - **Linux:** the .NET SDK plus Mono/MSBuild and .NET Framework reference assemblies. Distro package names vary, but you usually want packages such as `dotnet-sdk`, `mono`, `msbuild`/`mono-msbuild`, and `mono-reference-assemblies`/`.NET Framework 4.8 reference assemblies`.
-2. Have Nuclear Option installed at:
+2. Have Nuclear Option installed. The build looks for it in:
+    - **Windows:** the main library of your Steam install (found through the registry, wherever Steam is installed), then `C:\Program Files (x86)\Steam`, `C:\Program Files\Steam` and `D:\SteamLibrary`.
     - **Linux:** `~/.steam/steam/steamapps/common/Nuclear Option` OR `~/.steam/debian-installation/steamapps/common/Nuclear Option` OR `~/.local/share/Steam/steamapps/common/Nuclear Option`
-    - **Windows:** `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option` OR `C:\Program Files\Steam\steamapps\common\Nuclear Option` OR `D:\SteamLibrary\steamapps\common\Nuclear Option`
 
-    If none of these options work for you, set the `NUCLEAR_OPTION_GAME_DIR` environment variable or pass `/p:NuclearOptionGameDir="path\to\Nuclear Option"` when building.
+    If the game is in a different Steam library, set the `NUCLEAR_OPTION_GAME_DIR` environment variable or pass `/p:NuclearOptionGameDir="path\to\Nuclear Option"` when building.
 3. Ensure BepInEx 5.x is installed inside the Nuclear Option directory.
 4. Build the `Release` configuration from your IDE of choice. JetBrains Rider is tested; Visual Studio should work too. To build from the command line, run this from the project root:
 
@@ -101,6 +105,20 @@ Outputs:
 - `dist/NOVR.Installer-Win.exe`
 
 Building the full solution in `Release` also creates `dist/NOVR.zip`, ready to upload as the mod release asset.
+
+## Versioning, CI and releases
+
+The mod version lives in one place: `NovrVersion` in `NOVR.Build/NOVR.Build.props`. The plugin's `BepInPlugin` version is generated from it at build time.
+
+GitHub Actions builds every push and pull request (`.github/workflows/ci.yml`) and uploads `dist/` as a build artifact. Pushing a tag such as `v0.4.5` (`.github/workflows/release.yml`) builds with that version and creates a **draft** GitHub release with `NOVR.zip` and both installers attached, ready to review and publish.
+
+The NOVR plugin compiles against the game's assemblies, which can't be committed. CI uses reference-only copies instead: every method body and private member is stripped, and the resulting `NOVR.dll` is byte-identical to one built against the real game. To set this up, or refresh it after a game update:
+
+1. Run `tools/Export-GameReferences.ps1` on a machine with the game and BepInEx installed. It writes `game-refs/` (git-ignored).
+2. Push the contents of `game-refs/` to a **private** repository.
+3. In this repository's GitHub settings, add an Actions variable `GAME_REFS_REPO` (`owner/name` of that repository) and a secret `GAME_REFS_TOKEN` (a fine-grained token with read access to its contents).
+
+Without these, CI still builds the patcher, XR libraries and installers, and notes that the plugin was skipped. Releases require them.
 
 ## License
 

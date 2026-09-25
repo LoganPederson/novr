@@ -18,6 +18,20 @@
     <ItemGroup>
         <ProjectReference Include="..\NOVR.XR.OpenXR\NOVR.XR.OpenXR.csproj" Private="false"/>
     </ItemGroup>
+    <Target Name="GenerateNovrVersion" BeforeTargets="CoreCompile">
+        <PropertyGroup>
+            <NovrVersionFile>$(IntermediateOutputPath)NOVRVersion.g.cs</NovrVersionFile>
+        </PropertyGroup>
+        <WriteLinesToFile
+            File="$(NovrVersionFile)"
+            Lines="namespace NOVR%3B;internal static class NOVRVersion { public const string Version = &quot;$(NovrVersion)&quot;%3B }"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true" />
+        <ItemGroup>
+            <Compile Include="$(NovrVersionFile)" />
+            <FileWrites Include="$(NovrVersionFile)" />
+        </ItemGroup>
+    </Target>
     <ItemGroup>
         <Content Include="Assets\**\*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

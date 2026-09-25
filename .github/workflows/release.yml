@@ -1,0 +1,57 @@
+name: Release
+
+# Push a tag like v0.4.5 to build NOVR.zip and both installers and attach them to a draft release.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Require game reference assemblies
+        if: ${{ vars.GAME_REFS_REPO == '' }}
+        run: throw "Set the GAME_REFS_REPO variable and GAME_REFS_TOKEN secret; see tools/Export-GameReferences.ps1."
+
+      - name: Check out game reference assemblies
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.GAME_REFS_REPO }}
+          token: ${{ secrets.GAME_REFS_TOKEN }}
+          path: game-refs
+
+      - name: Read version from tag
+        id: version
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          # BepInEx parses the plugin version with System.Version, so it must be purely numeric.
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got ${{ github.ref_name }}" }
+          $propsVersion = ([xml](Get-Content NOVR.Build/NOVR.Build.props)).Project.PropertyGroup.NovrVersion.'#text'
+          if ($propsVersion -ne $version) {
+            echo "::warning::Tag $version differs from NovrVersion $propsVersion in NOVR.Build.props; building as $version."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        run: dotnet build NuclearOptionVirtualRealityMod.sln -c Release -p:NovrVersion=${{ steps.version.outputs.version }} -p:NuclearOptionGameDir="${{ github.workspace }}\game-refs"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          dist/NOVR.zip dist/NOVR.Installer-Win.exe dist/NOVR.Installer-Linux
+          --draft --generate-notes --title "NOVR ${{ steps.version.outputs.version }}"

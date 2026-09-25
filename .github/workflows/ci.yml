@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  REFS_PROBE: game-refs/NuclearOption_Data/Managed/Assembly-CSharp.dll
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The NOVR plugin compiles against the game's assemblies, which can't live in this repo.
+      # Reference-only copies (tools/Export-GameReferences.ps1) are pulled from a private repo when
+      # the GAME_REFS_REPO variable and GAME_REFS_TOKEN secret are set. Without them (including PRs
+      # from forks, which don't get secrets) CI still builds everything that doesn't need the game.
+      - name: Check out game reference assemblies
+        if: ${{ vars.GAME_REFS_REPO != '' }}
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.GAME_REFS_REPO }}
+          token: ${{ secrets.GAME_REFS_TOKEN }}
+          path: game-refs
+
+      - name: Build everything
+        if: ${{ hashFiles(env.REFS_PROBE) != '' }}
+        run: dotnet build NuclearOptionVirtualRealityMod.sln -c Release -p:NuclearOptionGameDir="${{ github.workspace }}\game-refs"
+
+      - name: Build without game references
+        if: ${{ hashFiles(env.REFS_PROBE) == '' }}
+        run: |
+          echo "::notice::Game reference assemblies unavailable; the NOVR plugin was not built. See tools/Export-GameReferences.ps1."
+          dotnet build NOVR.Patcher/NOVR.Patcher.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build NOVR.Installer/NOVR.Installer.csproj -c Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novr-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
