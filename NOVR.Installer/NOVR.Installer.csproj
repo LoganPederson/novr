@@ -38,6 +38,14 @@
     <PackageReference Include="Avalonia" Version="11.2.6" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.6" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.6" />
+    <!-- OpenPGP signature verification of release checksum lists (ReleaseSignature.cs). -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The release-signing public key the installer trusts. The release workflow checks signatures against the
+         same file, so the installer and CI can't disagree about which key is valid. -->
+    <EmbeddedResource Include="../RELEASE-SIGNING-KEY.asc" LogicalName="RELEASE-SIGNING-KEY.asc" />
   </ItemGroup>
 
   <Target Name="PublishInstallersToDist"

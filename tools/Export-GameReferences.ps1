@@ -12,7 +12,7 @@
     build:  dotnet build -c Release -p:NuclearOptionGameDir=<OutDir>
 
     To use it in CI, push the output folder's contents to a private repository and set the
-    GAME_REFS_REPO variable and GAME_REFS_TOKEN secret (see .github/workflows/ci.yml).
+    GAME_REFS_REPO variable and GAME_REFS_SSH_KEY secret (a read-only deploy key; see .github/workflows/ci.yml).
     Re-run this after each game update.
 
 .PARAMETER GameDir

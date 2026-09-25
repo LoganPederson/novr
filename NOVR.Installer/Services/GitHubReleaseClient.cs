@@ -34,7 +34,11 @@ public sealed class GitHubReleaseClient
                             ?? throw new InvalidOperationException(
                                 $"{component.Name} {release.TagName} has no {InstallerConstants.ChecksumAssetName}, so its download can't be verified.");
 
-        var expected = await ReadExpectedHashAsync(checksumAsset, component.ZipAssetName, cancellationToken)
+        var signatureAsset = release.Assets.FirstOrDefault(asset => asset.Name == InstallerConstants.ChecksumSignatureAssetName)
+                             ?? throw new InvalidOperationException(
+                                 $"{component.Name} {release.TagName} is not signed ({InstallerConstants.ChecksumSignatureAssetName} is missing), so it can't be trusted.");
+
+        var expected = await ReadExpectedHashAsync(checksumAsset, signatureAsset, component, release.TagName, cancellationToken)
                        ?? throw new InvalidOperationException(
                            $"{InstallerConstants.ChecksumAssetName} for {component.Name} {release.TagName} has no entry for {component.ZipAssetName}.");
 
@@ -67,13 +71,23 @@ public sealed class GitHubReleaseClient
         }
     }
 
-    private async Task<string?> ReadExpectedHashAsync(GitHubAsset checksumAsset, string fileName, CancellationToken cancellationToken)
+    // Only trusts the checksum list once its signature verifies against the built-in release key.
+    private async Task<string?> ReadExpectedHashAsync(
+        GitHubAsset checksumAsset, GitHubAsset signatureAsset, ModComponent component, string tag, CancellationToken cancellationToken)
     {
-        if (checksumAsset.Size > MaxChecksumFileBytes)
-            throw new InvalidOperationException($"{InstallerConstants.ChecksumAssetName} is unexpectedly large.");
+        if (checksumAsset.Size > MaxChecksumFileBytes || signatureAsset.Size > MaxChecksumFileBytes)
+            throw new InvalidOperationException($"{InstallerConstants.ChecksumAssetName} or its signature is unexpectedly large.");
 
-        var text = await _httpClient.GetStringAsync(checksumAsset.BrowserDownloadUrl, cancellationToken);
-        return ParseChecksumFile(text, fileName);
+        var checksumBytes = await _httpClient.GetByteArrayAsync(checksumAsset.BrowserDownloadUrl, cancellationToken);
+        var signature = await _httpClient.GetStringAsync(signatureAsset.BrowserDownloadUrl, cancellationToken);
+        if (!ReleaseSignature.Verify(checksumBytes, signature))
+        {
+            throw new InvalidOperationException(
+                $"The signature on {component.Name} {tag} is not valid for the release key {ReleaseSignature.TrustedKeyFingerprint}. " +
+                "The release may have been tampered with; nothing was installed.");
+        }
+
+        return ParseChecksumFile(System.Text.Encoding.UTF8.GetString(checksumBytes), component.ZipAssetName);
     }
 
     // Format: one "<64 hex chars>  <file name>" per line (sha256sum style; a leading '*' on the name is allowed).

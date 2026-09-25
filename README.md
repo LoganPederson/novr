@@ -119,7 +119,7 @@ The NOVR plugin compiles against the game's assemblies, which can't be committed
 
 1. Run `tools/Export-GameReferences.ps1` on a machine with the game and BepInEx installed. It writes `game-refs/` (git-ignored).
 2. Push the contents of `game-refs/` to a **private** repository.
-3. In this repository's GitHub settings, add an Actions variable `GAME_REFS_REPO` (`owner/name` of that repository) and a secret `GAME_REFS_TOKEN` (a fine-grained token with read access to its contents).
+3. Add a read-only deploy key to that repository, and in this repository's GitHub settings add an Actions variable `GAME_REFS_REPO` (`owner/name` of that repository) and a secret `GAME_REFS_SSH_KEY` holding the deploy key's private half.
 
 Without these, CI still builds the patcher, XR libraries and installers, and notes that the plugin was skipped. Releases require them.
 
@@ -166,3 +166,15 @@ Without these, CI still builds the patcher, XR libraries and installers, and not
 >
 >     You should have received a copy of the GNU General Public License
 >     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+## Verifying a release
+
+Every release includes `SHA256SUMS.txt`, signed with the release key (`SHA256SUMS.txt.asc`). The installer checks both automatically. To check by hand:
+
+```
+gpg --import RELEASE-SIGNING-KEY.asc
+gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt
+```
+
+The release key's fingerprint is `8DC8 AFFC F116 E35D 08CC  F300 5EBB 096D 8D58 8294` (Logan Pederson, Nuclear Option mods release signing).

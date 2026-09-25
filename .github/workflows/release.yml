@@ -1,7 +1,7 @@
 name: Release
 
 # Push a version tag (0.4.5 or v0.4.5) to build NOVR.zip and both installers, and attach them with a
-# SHA256SUMS.txt to a draft release. The installer checks every download against SHA256SUMS.txt.
+# signed SHA256SUMS.txt to a draft release. The installer checks the signature, then every download against it.
 on:
   push:
     tags: ['[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+']
@@ -31,13 +31,13 @@ jobs:
 
       - name: Require game reference assemblies
         if: ${{ vars.GAME_REFS_REPO == '' }}
-        run: throw "Set the GAME_REFS_REPO variable and GAME_REFS_TOKEN secret; see tools/Export-GameReferences.ps1."
+        run: throw "Set the GAME_REFS_REPO variable and GAME_REFS_SSH_KEY secret (a read-only deploy key for that repo); see tools/Export-GameReferences.ps1."
 
       - name: Check out game reference assemblies
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ vars.GAME_REFS_REPO }}
-          token: ${{ secrets.GAME_REFS_TOKEN }}
+          ssh-key: ${{ secrets.GAME_REFS_SSH_KEY }}
           path: game-refs
           persist-credentials: false
 
@@ -79,6 +79,26 @@ jobs:
           [IO.File]::WriteAllLines("$PWD/dist/SHA256SUMS.txt", $lines)
           Get-Content dist/SHA256SUMS.txt
 
+      # Sign the checksum list with the release key (OpenPGP, detached, armored). The installer only trusts a
+      # SHA256SUMS.txt whose signature verifies against the public key built into it. The signature is then
+      # checked in a fresh keyring holding only RELEASE-SIGNING-KEY.asc from the repo, so a wrong or empty secret
+      # fails here instead of producing a release the installer would reject.
+      - name: Sign SHA256SUMS.txt
+        shell: bash
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then echo "::error::RELEASE_SIGNING_KEY secret is empty"; exit 1; fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg-sign"
+          mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback --armor --detach-sign --output dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
+          export GNUPGHOME="$RUNNER_TEMP/gnupg-verify"
+          mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+          gpg --batch --import RELEASE-SIGNING-KEY.asc
+          gpg --batch --verify dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,5 +106,5 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: >
           gh release create "$env:TAG"
-          dist/NOVR.zip dist/NOVR.Installer-Win.exe dist/NOVR.Installer-Linux dist/SHA256SUMS.txt
+          dist/NOVR.zip dist/NOVR.Installer-Win.exe dist/NOVR.Installer-Linux dist/SHA256SUMS.txt dist/SHA256SUMS.txt.asc RELEASE-SIGNING-KEY.asc
           --draft --generate-notes --title "NOVR $env:VERSION"

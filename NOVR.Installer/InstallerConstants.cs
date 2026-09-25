@@ -14,6 +14,8 @@ public static class InstallerConstants
 
     // Every release lists "<sha256>  <file name>" for its assets here; downloads that don't match are rejected.
     public const string ChecksumAssetName = "SHA256SUMS.txt";
+    // Detached OpenPGP signature over SHA256SUMS.txt, checked against the embedded RELEASE-SIGNING-KEY.asc.
+    public const string ChecksumSignatureAssetName = "SHA256SUMS.txt.asc";
 
     // BepInEx is pinned to one reviewed release and verified against a hash built into the installer, so a
     // new or tampered upstream release can't be installed without an installer update.
