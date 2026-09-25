@@ -221,6 +221,7 @@ public class VrUiCursor: NOVRBehaviour
                 DisableStandardUIModule();
 
         UpdateStandardUIModuleState();
+        SendUpdateToSelectedObject();
         if (_texture == null) return;
 
         CheckModeToggleRequests();
@@ -603,6 +604,25 @@ public class VrUiCursor: NOVRBehaviour
             _standaloneInputModule.enabled = controlMapperOpen;
         if (_inputSystemUIInputModule != null)
             _inputSystemUIInputModule.enabled = controlMapperOpen;
+    }
+
+    private BaseEventData? _selectedUpdateEventData;
+
+    // The standard UI input module is disabled so this cursor can own pointer events, but that module is also what
+    // sends the selected object its per-frame update. TMP_InputField reads typed characters in that update, so
+    // without it the chat box took focus but never received keystrokes. Do the module's job while it's off.
+    private void SendUpdateToSelectedObject()
+    {
+        var eventSystem = EventSystem.current;
+        if (eventSystem == null || eventSystem.currentSelectedGameObject == null) return;
+        if ((_inputSystemUIInputModule != null && _inputSystemUIInputModule.enabled) ||
+            (_standaloneInputModule != null && _standaloneInputModule.enabled))
+            return;
+
+        if (_selectedUpdateEventData == null)
+            _selectedUpdateEventData = new BaseEventData(eventSystem);
+        _selectedUpdateEventData.Reset();
+        ExecuteEvents.Execute(eventSystem.currentSelectedGameObject, _selectedUpdateEventData, ExecuteEvents.updateSelectedHandler);
     }
 
     private void UpdateCursorAngles()
