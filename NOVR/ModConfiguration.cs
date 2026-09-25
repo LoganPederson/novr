@@ -21,6 +21,8 @@ public class ModConfiguration
     public readonly ConfigEntry<float> MaximumZoom;
     public readonly ConfigEntry<bool> InstantZoomOut;
     public readonly ConfigEntry<string> CursorInputMode;
+    public readonly ConfigEntry<bool> EnableHandTracking;
+    public readonly ConfigEntry<float> HandRaiseHeight;
     public readonly ConfigEntry<bool> EnableNativeMenuEnvironment;
     public readonly ConfigEntry<bool> EnableExperimentalSteamVrControllerProfiles;
     public readonly ConfigEntry<bool> LogXrStartupDiagnostics;
@@ -97,7 +99,25 @@ public class ModConfiguration
             "Experimental",
             "Cursor Input Mode",
             "Auto",
-            "Selects input source for the VR UI cursor. 'Auto' = use controller if tracked, else mouse. 'Mouse' = always use mouse. 'Controller' = always use controller ray.");
+            "Selects input source for the VR UI cursor. 'Auto' = use controller if tracked, else a raised hand (hand tracking), else mouse. " +
+            "'Mouse' = always use mouse. 'Controller' = always use controller ray. 'Hands' = always use hand tracking.");
+
+        EnableHandTracking = config.Bind(
+            "Input",
+            "Hand Tracking",
+            true,
+            "Point at menus with your hand and pinch thumb and index finger to click, without holding controllers. " +
+            "Needs a runtime with XR_EXT_hand_tracking (e.g. Virtual Desktop's VDXR, Meta Quest Link) and hand tracking enabled on the headset. " +
+            "Only a raised hand points, so hands resting on a HOTAS or in your lap never click. Takes effect after restarting the game.");
+
+        HandRaiseHeight = config.Bind(
+            "Input",
+            "Hand Raise Height",
+            0.4f,
+            new ConfigDescription(
+                "How far below eye level, in meters, a hand must be raised before it starts pointing. " +
+                "Lower it if your hands on the stick and throttle are being picked up; raise it if pointing feels hard to start.",
+                new AcceptableValueRange<float>(0.15f, 0.8f)));
 
         EnableNativeMenuEnvironment = config.Bind(
             "Experimental",

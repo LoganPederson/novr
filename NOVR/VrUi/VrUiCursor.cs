@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using UnityEngine.XR;
+using NOVR.VrUi.Hands;
 
 namespace NOVR.VrUi;
 
@@ -87,6 +88,7 @@ public class VrUiCursor: NOVRBehaviour
     // Controller input mode
     private bool _controllerModeActive;
     private bool _triggerIsPressed;
+    private bool _handModeActive;
     private bool _triggerWasPressed;
     private Vector3 _controllerOrigin;
     private Quaternion _controllerRotation;
@@ -97,9 +99,9 @@ public class VrUiCursor: NOVRBehaviour
     private static int _diagFrameCounter;
 
     // Runtime input mode override — set by CheckModeToggleRequests() in response
-    // to a mouse left-click (→ Mouse) or controller trigger press (→ Controller).
-    // When _runtimeMode == Auto the config-driven default is used.
-    public enum RuntimeInputMode { Auto, Mouse, Controller }
+    // to a mouse left-click (→ Mouse), controller trigger press (→ Controller) or
+    // hand pinch (→ Hands). When _runtimeMode == Auto the config-driven default is used.
+    public enum RuntimeInputMode { Auto, Mouse, Controller, Hands }
     private RuntimeInputMode _runtimeMode = RuntimeInputMode.Auto;
 
     // Angular dead-zone for controller ray — suppresses cursor movement when the
@@ -152,7 +154,13 @@ public class VrUiCursor: NOVRBehaviour
             Mathf.Clamp(screenPoint.y, 0f, camera.pixelHeight));
     }
 
+    // True for any ray pointer (controller or hand), so the laser and ray hit-testing apply to both.
     public bool IsControllerModeActive => _controllerModeActive;
+
+    public bool IsHandModeActive => _handModeActive;
+
+    // Start of the current pointer ray, for drawing the laser from a hand.
+    public Vector3 RayOrigin => _controllerOrigin;
 
     public RuntimeInputMode RuntimeMode => _runtimeMode;
 
@@ -218,20 +226,40 @@ public class VrUiCursor: NOVRBehaviour
         string modeSetting = ModConfiguration.Instance.CursorInputMode.Value;
         bool controllerAvailable = VrControllerInput.TryGetDominantHand(
             out _controllerOrigin, out _controllerRotation, out _triggerIsPressed);
+        bool handAvailable = HandPointer.TryGetPointer(
+            out var handOrigin, out var handRotation, out var handPinching, out var handPinchStarted);
 
         bool useController;
+        bool useHands;
         if (_runtimeMode == RuntimeInputMode.Controller)
         {
             useController = true;
+            useHands = false;
+        }
+        else if (_runtimeMode == RuntimeInputMode.Hands)
+        {
+            useController = false;
+            useHands = true;
         }
         else if (_runtimeMode == RuntimeInputMode.Mouse)
         {
             useController = false;
+            useHands = false;
         }
         else
         {
             useController = modeSetting == "Controller" ||
                             (modeSetting == "Auto" && controllerAvailable);
+            useHands = !useController &&
+                       (modeSetting == "Hands" || (modeSetting == "Auto" && handAvailable));
+        }
+
+        if (useHands && handAvailable)
+        {
+            // A hand drives the same ray pointer as a controller, with pinch as the trigger.
+            _controllerOrigin = handOrigin;
+            _controllerRotation = handRotation;
+            _triggerIsPressed = handPinching;
         }
 
         // Throttled diagnostic — show current mode + pose state once per second.
@@ -242,7 +270,7 @@ public class VrUiCursor: NOVRBehaviour
             if (diagNow - _lastDiagLogTime > DiagLogInterval)
             {
                 _lastDiagLogTime = diagNow;
-                string branch = (useController && controllerAvailable) ? "CONTROLLER" : "MOUSE";
+                string branch = (useHands && handAvailable) ? "HANDS" : (useController && controllerAvailable) ? "CONTROLLER" : "MOUSE";
                 string cursorPosStr = (_cursor != null) ? _cursor.transform.position.ToString() : "<null>";
                 string cursorActiveStr = (_cursor != null) ? _cursor.activeSelf.ToString() : "<null>";
                 string msg = $"[VrUiCursor] mode='{modeSetting}' runtime={_runtimeMode} ctrlAvail={controllerAvailable} branch={branch} ctrlPos={_controllerOrigin} cursorPos={cursorPosStr} cursorActive={cursorActiveStr} trigger={_triggerIsPressed} _hasActiveCanvas={_hasActiveCanvas}";
@@ -251,15 +279,18 @@ public class VrUiCursor: NOVRBehaviour
             }
         }
 
-        if (useController && controllerAvailable)
+        bool handRay = useHands && handAvailable;
+        if (handRay || (useController && controllerAvailable))
         {
             _controllerModeActive = true;
+            _handModeActive = handRay;
             _triggerWasPressed = _triggerIsPressed && !_triggerWasPressed;
 
             // Use trigger was-pressed tracking for animation
-            bool triggerDownThisFrame = VrControllerInput.GetTriggerWasPressedThisFrame(
-                XRNode.RightHand) || VrControllerInput.GetTriggerWasPressedThisFrame(
-                XRNode.LeftHand);
+            bool triggerDownThisFrame = handRay
+                ? handPinchStarted
+                : VrControllerInput.GetTriggerWasPressedThisFrame(XRNode.RightHand) ||
+                  VrControllerInput.GetTriggerWasPressedThisFrame(XRNode.LeftHand);
 
             UpdateCursorAnglesFromController();
 
@@ -294,6 +325,7 @@ public class VrUiCursor: NOVRBehaviour
         else
         {
             _controllerModeActive = false;
+            _handModeActive = false;
             if (!IsRealCursorVisible())
             {
                 if (_cursor != null)
@@ -347,6 +379,13 @@ public class VrUiCursor: NOVRBehaviour
         if (triggerPressedThisFrame && _runtimeMode != RuntimeInputMode.Controller)
         {
             _runtimeMode = RuntimeInputMode.Controller;
+            return;
+        }
+
+        if (HandPointer.TryGetPointer(out _, out _, out _, out var pinchStartedThisFrame) &&
+            pinchStartedThisFrame && _runtimeMode != RuntimeInputMode.Hands)
+        {
+            _runtimeMode = RuntimeInputMode.Hands;
         }
     }
 

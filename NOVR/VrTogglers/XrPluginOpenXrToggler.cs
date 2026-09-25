@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.XR.Management;
 using UnityEngine.XR.OpenXR;
+using NOVR.VrUi.Hands;
 
 namespace NOVR.VrTogglers;
 
@@ -18,6 +19,19 @@ public class XrPluginOpenXrToggler : XrPluginToggler
             catch (Exception exception)
             {
                 Debug.LogWarning($"[NOVR] Failed to configure experimental SteamVR OpenXR controller profiles. Continuing normal VR startup. Exception: {exception}");
+            }
+        }
+
+        if (ModConfiguration.Instance != null && ModConfiguration.Instance.EnableHandTracking.Value)
+        {
+            try
+            {
+                OpenXrControllerProfileBootstrap.EnsureCustomFeature<OpenXrHandTrackingFeature>(
+                    OpenXrHandTrackingFeature.UiName, OpenXrHandTrackingFeature.ExtensionStrings);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[NOVR] Failed to register hand tracking. Continuing normal VR startup. Exception: {exception}");
             }
         }
 

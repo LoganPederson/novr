@@ -70,6 +70,36 @@ internal static class OpenXrControllerProfileBootstrap
         return configuredCount;
     }
 
+    // Adds one of NOVR's own OpenXR features to the settings before the loader starts, so the loader requests
+    // its extensions and forwards instance/session events to it.
+    public static T? EnsureCustomFeature<T>(string uiName, string extensionStrings) where T : OpenXRFeature
+    {
+        var settings = OpenXRSettings.Instance;
+        if (settings == null || FeaturesField == null)
+        {
+            Debug.LogWarning($"[NOVR] Could not register OpenXR feature '{uiName}' because OpenXRSettings is unavailable.");
+            return null;
+        }
+
+        var features = ReadFeatures(settings);
+        var feature = features.OfType<T>().FirstOrDefault();
+        if (feature == null)
+        {
+            feature = ScriptableObject.CreateInstance<T>();
+            feature.name = uiName;
+            features.Add(feature);
+        }
+
+        ApplyFeatureMetadata(feature, new ProfileSpec(typeof(T).AssemblyQualifiedName ?? typeof(T).FullName ?? uiName, uiName));
+        SetFeatureField(feature, "company", "NOVR");
+        SetFeatureField(feature, "openxrExtensionStrings", extensionStrings);
+        feature.enabled = true;
+
+        FeaturesField.SetValue(settings, features.ToArray());
+        Debug.Log($"[NOVR] Registered OpenXR feature '{uiName}' requesting \"{extensionStrings}\".");
+        return feature;
+    }
+
     private static void RegisterOpenXrInputSystemSupportLayouts()
     {
         try

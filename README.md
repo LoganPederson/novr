@@ -64,6 +64,10 @@ If the game is already running while installing or rebuilding, Windows may preve
 
 Press **F9** to recenter your view, in the cockpit or in menus. The recenter happens after a short countdown so you have time to face forward. In flight you can also use **RECENTER VIEW** in the pause menu. The key can be changed with `Recenter Shortcut` in `BepInEx/config/deltawing.novr.cfg`; HOTAS users can map a stick button to it with their joystick software.
 
+### Hand tracking for menus
+
+If your headset tracks hands and your OpenXR runtime supports `XR_EXT_hand_tracking` (for example Virtual Desktop's VDXR or Meta Quest Link), you can use menus without controllers: raise a hand in front of you, point, and pinch your thumb and index finger to click. Hands resting low, such as on a stick and throttle, are ignored, so they can't click by accident. Adjust `Hand Raise Height` in the config if your HOTAS sits unusually high or pointing is hard to start, or turn `Hand Tracking` off entirely.
+
 ### Linux/Proton notes
 
 The installer tries to set the required `winhttp` override automatically. If BepInEx does not load under Proton, configure the game's Wine prefix manually so `winhttp` uses `native,builtin`.

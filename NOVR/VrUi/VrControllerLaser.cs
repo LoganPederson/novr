@@ -84,7 +84,9 @@ namespace NOVR.VrUi
 
             // Read current frame controller origin for the line start
             bool gotHand = VrControllerInput.TryGetDominantHand(out var handPos, out var handRot, out _);
-            if (gotHand)
+            if (cursor.IsHandModeActive)
+                controllerPos = cursor.RayOrigin; // tracked hand, not a controller
+            else if (gotHand)
                 controllerPos = handPos;
 
             float distance = Vector3.Distance(controllerPos, cursorPos);
