@@ -72,7 +72,15 @@ internal static class ObjectiveOverlayPatch
 
         var range = result.Range.GetValueOrDefault();
         var invDistance = 1f / (result.Distance != 0f ? result.Distance : 0.01f);
-        sizeIndicator.transform.localScale = Vector3.one * (35f * range * invDistance);
+        // The ring sprite fills its rect, so its radius is half the rect height. Like vanilla, size it so it covers
+        // range/distance (the tangent of the waypoint's angular radius), here on the HUD sphere at HudDistance.
+        // The old fixed 35x scale drew the ring a fraction of the size of the waypoint it marks (novr#38).
+        var hudRadius = VrHudProjectionHelper.HudDistance * range * invDistance;
+        var indicatorHeight = sizeIndicator.rectTransform.rect.height;
+        var parent = sizeIndicator.transform.parent;
+        var parentScale = parent != null ? parent.lossyScale.y : 1f;
+        if (indicatorHeight > Mathf.Epsilon && parentScale > Mathf.Epsilon)
+            sizeIndicator.transform.localScale = Vector3.one * (2f * hudRadius / (indicatorHeight * parentScale));
         var sizeRangeFactor = range * 20f * invDistance - 0.5f;
         sizeIndicator.transform.localEulerAngles = Vector3.forward * sizeRangeFactor * 3f;
         // Like vanilla since 0.34: keep the indicator colour (set by SetColor) and only fade its alpha.
