@@ -114,6 +114,7 @@ public class VrUiCursor: NOVRBehaviour
     private PointerEventData? _pointerEventData;
     private GameObject? _hovered;
     private GameObject? _pointerPress;
+    private GameObject? _pointerDrag;
     // Set when a press already clicked a map icon directly (e.g. a spawn airbase), so releasing the same
     // press doesn't also click whatever icon is drawn on top of it.
     private bool _suppressNextPointerClick;
@@ -398,7 +399,13 @@ public class VrUiCursor: NOVRBehaviour
         var es = EventSystem.current;
         if (es == null) return;
 
-        if (_activeCanvas == null || !_hasActiveCanvas) return;
+        // A standard module owns the pointer (flat ControlMapper); sending our own events too would double-click.
+        // Off every canvas nothing is under the cursor, but a press or drag that started on one still has to end.
+        if (IsStandardUIModuleEnabled || _activeCanvas == null || !_hasActiveCanvas)
+        {
+            if (_wasLeftDown && !isLeftDown) CancelPress();
+            return;
+        }
 
         var ped = _pointerEventData;
         if (ped == null)
@@ -407,8 +414,8 @@ public class VrUiCursor: NOVRBehaviour
             _pointerEventData = ped;
         }
 
+        ped.delta = _wasLeftDown ? screenPoint - ped.position : Vector2.zero;
         ped.position = screenPoint;
-        ped.delta = Vector2.zero;
         ped.button = PointerEventData.InputButton.Left;
 
         var results = RaycastCanvasHierarchy(_activeCanvas, ped);
@@ -416,11 +423,19 @@ public class VrUiCursor: NOVRBehaviour
 
         // Get the event root (the ancestor that has Selectable or IPointerClickHandler)
         GameObject? current = null;
+        GameObject? hitObject = null;
         if (results.Count > 0)
         {
-            current = GetEventRoot(results[0].gameObject);
+            hitObject = results[0].gameObject;
+            current = GetEventRoot(hitObject);
             ped.pointerCurrentRaycast = results[0];
         }
+        else
+        {
+            ped.pointerCurrentRaycast = default;
+        }
+
+        SendScroll(ped, hitObject);
 
         // Hover enter / exit — use hierarchy-walking version
         if (current != _hovered)
@@ -454,19 +469,27 @@ public class VrUiCursor: NOVRBehaviour
                 _pointerPress = current;
                 ped.pressPosition = screenPoint;
                 ped.pointerPress = current;
+                ped.pointerPressRaycast = ped.pointerCurrentRaycast;
                 ped.clickTime = Time.unscaledTime;
                 ped.clickCount = 1;
+                ped.eligibleForClick = true;
+                ped.dragging = false;
+                ped.useDragThreshold = true;
                 if (current != null)
                 {
                     ExecuteEvents.ExecuteHierarchy(current, ped, ExecuteEvents.pointerDownHandler);
                 }
+
+                // Like the standard input module: whatever would handle a drag from here (a slider, a scrollbar,
+                // a scroll view behind a button) gets it, so scroll lists work by press-and-drag.
+                _pointerDrag = hitObject != null ? ExecuteEvents.GetEventHandler<IDragHandler>(hitObject) : null;
+                ped.pointerDrag = _pointerDrag;
+                if (_pointerDrag != null)
+                    ExecuteEvents.Execute(_pointerDrag, ped, ExecuteEvents.initializePotentialDrag);
             }
             else
             {
-                if (_pointerPress != null && _pointerPress == current)
-                {
-                    ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.dragHandler);
-                }
+                UpdateDrag(ped, es);
             }
         }
         else if (_wasLeftDown)
@@ -479,16 +502,99 @@ public class VrUiCursor: NOVRBehaviour
                     ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.pointerClickHandler);
                     ped.clickCount++;
                 }
-                else
-                {
-                    ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.initializePotentialDrag);
-                }
             }
+
+            if (_pointerDrag != null && ped.dragging)
+                ExecuteEvents.Execute(_pointerDrag, ped, ExecuteEvents.endDragHandler);
+
             _pointerPress = null;
+            _pointerDrag = null;
+            ped.pointerPress = null;
+            ped.pointerDrag = null;
+            ped.dragging = false;
             _suppressNextPointerClick = false;
         }
 
         _wasLeftDown = isLeftDown;
+    }
+
+    // Ends a press without clicking: releases the pressed object and finishes any drag.
+    private void CancelPress()
+    {
+        var ped = _pointerEventData;
+        if (ped != null)
+        {
+            if (_pointerPress != null)
+                ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.pointerUpHandler);
+            if (_pointerDrag != null && ped.dragging)
+                ExecuteEvents.Execute(_pointerDrag, ped, ExecuteEvents.endDragHandler);
+            ped.pointerPress = null;
+            ped.pointerDrag = null;
+            ped.dragging = false;
+        }
+
+        _pointerPress = null;
+        _pointerDrag = null;
+        _suppressNextPointerClick = false;
+        _wasLeftDown = false;
+    }
+
+    // A ray from a hand or controller wobbles more than a mouse, so it needs a bigger move before a press turns into
+    // a drag; otherwise pinching a button inside a scroll list would start scrolling the list instead of clicking.
+    private const float RayDragThresholdScreenFraction = 0.03f;
+
+    private void UpdateDrag(PointerEventData ped, EventSystem es)
+    {
+        if (_pointerDrag == null) return;
+
+        if (!ped.dragging)
+        {
+            var threshold = (float)es.pixelDragThreshold;
+            var camera = UiCamera;
+            if (_controllerModeActive && camera != null)
+                threshold = Mathf.Max(threshold, camera.pixelHeight * RayDragThresholdScreenFraction);
+            if ((ped.position - ped.pressPosition).sqrMagnitude < threshold * threshold) return;
+
+            ExecuteEvents.Execute(_pointerDrag, ped, ExecuteEvents.beginDragHandler);
+            ped.dragging = true;
+
+            // Dragging something other than what was pressed (a scroll view behind a button) cancels the press,
+            // so letting go doesn't also click the button.
+            if (_pointerPress != null && ExecuteEvents.GetEventHandler<IPointerDownHandler>(_pointerPress) != _pointerDrag)
+            {
+                ExecuteEvents.ExecuteHierarchy(_pointerPress, ped, ExecuteEvents.pointerUpHandler);
+                ped.eligibleForClick = false;
+                _pointerPress = null;
+                ped.pointerPress = null;
+            }
+        }
+
+        ExecuteEvents.Execute(_pointerDrag, ped, ExecuteEvents.dragHandler);
+    }
+
+    // Mouse wheel scrolling over whatever the cursor points at, in any input mode (the standard module is off).
+    private static void SendScroll(PointerEventData ped, GameObject? hitObject)
+    {
+        if (hitObject == null) return;
+
+        Vector2 scroll;
+        try
+        {
+            scroll = UnityEngine.Input.mouseScrollDelta;
+        }
+        catch (System.InvalidOperationException)
+        {
+            return; // Legacy input disabled.
+        }
+
+        if (scroll.sqrMagnitude < 1e-6f) return;
+
+        var handler = ExecuteEvents.GetEventHandler<IScrollHandler>(hitObject);
+        if (handler == null) return;
+
+        ped.scrollDelta = scroll;
+        ExecuteEvents.Execute(handler, ped, ExecuteEvents.scrollHandler);
+        ped.scrollDelta = Vector2.zero;
     }
 
     private readonly List<GraphicRaycaster> _raycasterBuffer = new();
@@ -593,18 +699,44 @@ public class VrUiCursor: NOVRBehaviour
         return foundAny;
     }
 
+    // The standard modules stay off while this cursor drives the UI. They only come back for the ControlMapper
+    // (the Rewired bindings screen) when it is still drawn flat on the desktop window, where the real mouse is
+    // what the player sees. Once UIBehaviorPatcher has moved it into VR, a standard module would hit-test the real
+    // mouse's desktop coordinates through the head-tracked UI camera, so its clicks landed away from the drawn
+    // cursor and moved with the headset (InfernoSuperNova/novr#19); this cursor handles it like any other canvas.
     private void UpdateStandardUIModuleState()
     {
         if (_standaloneInputModule == null && _inputSystemUIInputModule == null)
             return;
 
-        var controlMapperOpen = GameManager.controlMapper != null && GameManager.controlMapper.isOpen;
+        var useStandardModules = IsFlatControlMapperOpen();
 
         if (_standaloneInputModule != null)
-            _standaloneInputModule.enabled = controlMapperOpen;
+            _standaloneInputModule.enabled = useStandardModules;
         if (_inputSystemUIInputModule != null)
-            _inputSystemUIInputModule.enabled = controlMapperOpen;
+            _inputSystemUIInputModule.enabled = useStandardModules;
     }
+
+    private readonly List<Canvas> _controlMapperCanvases = new();
+
+    private bool IsFlatControlMapperOpen()
+    {
+        var controlMapper = GameManager.controlMapper;
+        if (controlMapper == null || !controlMapper.isOpen) return false;
+
+        controlMapper.GetComponentsInChildren(false, _controlMapperCanvases);
+        foreach (var canvas in _controlMapperCanvases)
+        {
+            if (canvas != null && canvas.isRootCanvas && canvas.renderMode == RenderMode.WorldSpace)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool IsStandardUIModuleEnabled =>
+        (_standaloneInputModule != null && _standaloneInputModule.enabled) ||
+        (_inputSystemUIInputModule != null && _inputSystemUIInputModule.enabled);
 
     private BaseEventData? _selectedUpdateEventData;
 
@@ -615,8 +747,7 @@ public class VrUiCursor: NOVRBehaviour
     {
         var eventSystem = EventSystem.current;
         if (eventSystem == null || eventSystem.currentSelectedGameObject == null) return;
-        if ((_inputSystemUIInputModule != null && _inputSystemUIInputModule.enabled) ||
-            (_standaloneInputModule != null && _standaloneInputModule.enabled))
+        if (IsStandardUIModuleEnabled)
             return;
 
         if (_selectedUpdateEventData == null)
