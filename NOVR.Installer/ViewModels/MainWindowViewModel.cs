@@ -26,6 +26,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _removeBepInExOnFinish;
     private bool _showUninstallFinish;
     private bool _includeMessageLog = true;
+    private bool _includeComms = true;
     private Func<Task<string?>>? _browseForFolderAsync;
     private Task<DownloadedNovrRelease>? _latestNovrDownloadTask;
     private object _downloadLock = new();
@@ -119,6 +120,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _includeMessageLog;
         set => SetField(ref _includeMessageLog, value);
+    }
+
+    public bool IncludeComms
+    {
+        get => _includeComms;
+        set => SetField(ref _includeComms, value);
     }
 
     public GameInstallInfo? GameInfo
@@ -239,8 +246,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             else
             {
                 GameInfo = found;
-                // Offer Message Log on fresh installs; on an existing install, reflect whether it's there.
+                // Offer the optional mods on fresh installs; on an existing install, reflect whether they're there.
                 IncludeMessageLog = found.ModState != InstallState.FullyInstalled || found.IsInstalled(ModComponent.MessageLog);
+                IncludeComms = found.ModState != InstallState.FullyInstalled || found.IsInstalled(ModComponent.Comms);
                 Status = found.ModState == InstallState.FullyInstalled
                     ? $"NOVR installed version: {found.Version}"
                     : "Nuclear Option found.";
@@ -310,17 +318,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     progress,
                     CancellationToken.None);
 
-                if (IncludeMessageLog)
-                {
-                    var (messageLogZip, messageLogVersion) = await _releaseClient.DownloadVerifiedReleaseAsync(
-                        ModComponent.MessageLog, tempDir, progress, CancellationToken.None);
-                    await _installer.InstallComponentAsync(
-                        info, ModComponent.MessageLog, messageLogZip, messageLogVersion.ToString(), progress, CancellationToken.None);
-                }
-                else if (info.IsInstalled(ModComponent.MessageLog))
-                {
-                    await _installer.UninstallComponentAsync(info, ModComponent.MessageLog, progress, CancellationToken.None);
-                }
+                await InstallOrRemoveOptionalAsync(info, ModComponent.MessageLog, IncludeMessageLog, tempDir, progress);
+                await InstallOrRemoveOptionalAsync(info, ModComponent.Comms, IncludeComms, tempDir, progress);
 
                 var protonMessage = await _protonPrefixService.TryConfigureWinHttpOverrideAsync(info, progress, CancellationToken.None);
 
@@ -333,6 +332,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 TryDeleteDirectory(tempDir);
             }
         });
+    }
+
+    // Installs the latest verified release of an optional component when it's selected, and removes it when
+    // it's been deselected, so the checkboxes always describe what's installed after the operation.
+    private async Task InstallOrRemoveOptionalAsync(GameInstallInfo info, ModComponent component, bool include, string tempDir, IProgress<string> progress)
+    {
+        if (include)
+        {
+            var (zip, version) = await _releaseClient.DownloadVerifiedReleaseAsync(component, tempDir, progress, CancellationToken.None);
+            await _installer.InstallComponentAsync(info, component, zip, version.ToString(), progress, CancellationToken.None);
+        }
+        else if (info.IsInstalled(component))
+        {
+            await _installer.UninstallComponentAsync(info, component, progress, CancellationToken.None);
+        }
     }
 
     private async Task UninstallAsync()
@@ -427,7 +441,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return $"Game: {info.GameDir}{Environment.NewLine}" +
                $"BepInEx: {(info.HasBepInEx ? "installed" : "not installed")}{Environment.NewLine}" +
                $"NOVR: {info.ModState}{Environment.NewLine}" +
-               $"Message Log: {(info.IsInstalled(ModComponent.MessageLog) ? "installed" : "not installed")}";
+               $"Message Log: {(info.IsInstalled(ModComponent.MessageLog) ? "installed" : "not installed")}{Environment.NewLine}" +
+               $"Comms: {(info.IsInstalled(ModComponent.Comms) ? "installed" : "not installed")}";
     }
 
     private async Task RunBusyAsync(Func<Task> action)

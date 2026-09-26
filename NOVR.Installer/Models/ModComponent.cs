@@ -29,5 +29,13 @@ public sealed record ModComponent(
         new[] { "plugins/MessageLog" },
         Required: false);
 
-    public static readonly IReadOnlyList<ModComponent> Catalog = new[] { Novr, MessageLog };
+    public static readonly ModComponent Comms = new(
+        "Comms",
+        InstallerConstants.GitHubOwner,
+        "no-comms",
+        "Comms.zip",
+        new[] { "plugins/Comms" },
+        Required: false);
+
+    public static readonly IReadOnlyList<ModComponent> Catalog = new[] { Novr, MessageLog, Comms };
 }

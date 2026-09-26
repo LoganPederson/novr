@@ -120,6 +120,14 @@ public sealed class MainWindow : Window
         messageLog.Bind(IsEnabledProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IsBusy)) { Converter = Avalonia.Data.Converters.BoolConverters.Not });
         root.Children.Add(messageLog);
 
+        var comms = new CheckBox
+        {
+            Content = "Also install Comms (push-to-talk voice chat and HOTAS quick chat)"
+        };
+        comms.Bind(ToggleButton.IsCheckedProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IncludeComms)) { Mode = Avalonia.Data.BindingMode.TwoWay });
+        comms.Bind(IsEnabledProperty, new Avalonia.Data.Binding(nameof(MainWindowViewModel.IsBusy)) { Converter = Avalonia.Data.Converters.BoolConverters.Not });
+        root.Children.Add(comms);
+
         root.Children.Add(BuildInstallActions());
         root.Children.Add(BuildInstalledActions());
         root.Children.Add(BuildUninstallFinishActions());
