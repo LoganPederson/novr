@@ -37,6 +37,10 @@ public class ModConfiguration
     public readonly ConfigEntry<float> HudInfoPanelScale;
     public readonly ConfigEntry<float> HudInfoPanelSpread;
     public readonly ConfigEntry<bool> ShowEnemyTypeOnHover;
+    public readonly ConfigEntry<bool> ShowPerformanceOverlay;
+    public readonly ConfigEntry<KeyCode> PerformanceOverlayShortcut;
+    public readonly ConfigEntry<bool> LogPerformanceCsv;
+    public readonly ConfigEntry<float> PerformanceCsvInterval;
 
     private readonly Dictionary<string, (ConfigEntry<float> Forward, ConfigEntry<float> Right)> _perPlaneEntries = new();
 
@@ -231,6 +235,35 @@ public class ModConfiguration
         };
 
         PreloadPerPlaneEntries();
+
+        ShowPerformanceOverlay = config.Bind(
+            "Diagnostics",
+            "Show Performance Overlay",
+            false,
+            "Show a small panel in the lower left of the headset view with frame time, FPS, CPU/GPU time and dropped frames. " +
+            "Values the game or VR runtime does not report are shown as n/a.");
+
+        PerformanceOverlayShortcut = config.Bind(
+            "Diagnostics",
+            "Performance Overlay Shortcut",
+            KeyCode.F10,
+            "Keyboard shortcut that shows or hides the performance overlay.");
+
+        LogPerformanceCsv = config.Bind(
+            "Diagnostics",
+            "Log Performance To CSV",
+            false,
+            "Write frame timing averages to a CSV file for comparing settings, in the NOVR folder next to the game's Player.log " +
+            "(%USERPROFILE%\\AppData\\LocalLow\\Shockfront\\NuclearOption\\NOVR). Works whether or not the overlay is shown; " +
+            "a new file is started each time logging is turned on.");
+
+        PerformanceCsvInterval = config.Bind(
+            "Diagnostics",
+            "Performance CSV Interval",
+            1.0f,
+            new ConfigDescription(
+                "Seconds of frames averaged into each CSV row.",
+                new AcceptableValueRange<float>(0.25f, 10.0f)));
     }
 
     private void PreloadPerPlaneEntries()
