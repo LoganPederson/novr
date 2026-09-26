@@ -43,12 +43,20 @@ public class NOVRDynamicMapBehavior : MonoBehaviour
             if (map.mapBackground != null)
             {
                 var bgImg = map.mapBackground.GetComponent<Image>();
-                if (bgImg != null) bgImg.raycastTarget = true;
+                if (bgImg != null)
+                {
+                    bgImg.raycastTarget = true;
+                    VrCanvasHitTester.RegisterSurfaceGraphic(bgImg);
+                }
             }
             if (map.mapImage != null)
             {
                 var mapImg = map.mapImage.GetComponent<Image>();
-                if (mapImg != null) mapImg.raycastTarget = true;
+                if (mapImg != null)
+                {
+                    mapImg.raycastTarget = true;
+                    VrCanvasHitTester.RegisterSurfaceGraphic(mapImg);
+                }
             }
         }
     }
