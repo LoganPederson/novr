@@ -67,6 +67,10 @@ Press **F9** to recenter your view, in the cockpit or in menus. The recenter hap
 
 If your headset tracks hands and your OpenXR runtime supports `XR_EXT_hand_tracking` (for example Virtual Desktop's VDXR or Meta Quest Link), you can use menus without controllers. With Virtual Desktop, turn on **Forward tracking data** in its Streaming tab first. Then raise a hand in front of you, point, and pinch your thumb and index finger to click. Hands resting low, such as on a stick and throttle, are ignored, so they can't click by accident. Adjust `Hand Raise Height` in the config if your HOTAS sits unusually high or pointing is hard to start, or turn `Hand Tracking` off entirely.
 
+### Map and target screen in flight
+
+In the cockpit, point at the small map on the HUD and pinch (or click it with a controller) to open the full map; the game's map key works too. On the full map, pinch an icon to select it, and pinch and drag to pan. A bar under the map lets you place it: press and drag **MOVE** to move it around you (with a hand, pull in or push out to bring it nearer or farther), **-** and **+** resize it, **RESET** puts it back where the game has it, and **CLOSE** closes the map. **TGT SCREEN** shows a floating copy of the cockpit's target screen, which you can move and size the same way. Placements are saved in the `[Panels]` section of the config, which also has optional keys (unset by default) to toggle the map and target screen, bring panels to where you're looking, and resize them.
+
 ### Linux/Proton notes
 
 The installer tries to set the required `winhttp` override automatically. If BepInEx does not load under Proton, configure the game's Wine prefix manually so `winhttp` uses `native,builtin`.

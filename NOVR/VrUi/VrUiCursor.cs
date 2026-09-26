@@ -167,6 +167,7 @@ public class VrUiCursor: NOVRBehaviour
     // for things that follow a press themselves, like dragging a floating panel or panning the map.
     public bool IsPointerDown { get; private set; }
     public Ray PointerRay => _lastProbeRay;
+    public Canvas? ActiveCanvas => _hasActiveCanvas ? _activeCanvas : null;
 
     // Start of the current pointer ray, for drawing the laser from a hand.
     public Vector3 RayOrigin => _controllerOrigin;
@@ -203,6 +204,8 @@ public class VrUiCursor: NOVRBehaviour
     private void Start()
     {
         _texture = CreateCursorTexture();
+        if (GetComponent<Panels.FloatingPanelManager>() == null)
+            gameObject.AddComponent<Panels.FloatingPanelManager>();
         if (NOVRPlugin.LogSource != null)
             NOVRPlugin.LogSource.LogMessage($"[VrUiCursor] Start id={_instanceId}");
     }
