@@ -30,6 +30,7 @@ internal static class ModCompat
     private static readonly List<Entry> Entries = new()
     {
         new Entry("NO Tactitools", NottCompat.PluginGuid, NottCompat.Apply),
+        new Entry("Nuclear Option eXtensions", NoxCompat.PluginGuid, NoxCompat.Apply),
     };
 
     private static Harmony? _harmony;
