@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using NOVR.PatchHelper;
@@ -16,6 +17,34 @@ internal static class ObjectiveOverlayPatch
     private static readonly FieldInfo ObjectiveInfoField = AccessTools.Field(typeof(ObjectiveOverlay), "objectiveInfo");
     private static readonly FieldInfo PointerTailField = AccessTools.Field(typeof(ObjectiveOverlay), "pointerTail");
     private static readonly FieldInfo HiddenField = AccessTools.Field(typeof(ObjectiveOverlay), "hidden");
+    private static readonly FieldInfo OverlaysField = AccessTools.Field(typeof(ObjectiveOverlayManager), "overlays");
+
+    // TextNoOverlap keeps positions as Vector2, so StopTextOverlap moves every objective label to z = 0, which in VR
+    // is the HUD camera itself rather than the HUD sphere, and the labels vanish. Put them back at the depth of the
+    // pointer or dot they were anchored to in UpdateOverlay.
+    [PatchPostfix(typeof(ObjectiveOverlayManager), "StopTextOverlap")]
+    private static void StopTextOverlap(ObjectiveOverlayManager __instance)
+    {
+        if (APIBus.CockpitHudCamera == null)
+            return;
+
+        if (OverlaysField?.GetValue(__instance) is not List<ObjectiveOverlay> overlays)
+            return;
+
+        foreach (var overlay in overlays)
+        {
+            var objectivePointer = ObjectivePointerField?.GetValue(overlay) as Image;
+            var objectiveDot = ObjectiveDotField?.GetValue(overlay) as Image;
+            var pointerTail = PointerTailField?.GetValue(overlay) as Transform;
+            var text = overlay.TextNoOverlap?.Text;
+            if (objectivePointer == null || objectiveDot == null || pointerTail == null || text == null)
+                continue;
+
+            var anchorDepth = objectivePointer.enabled ? pointerTail.position.z : objectiveDot.transform.position.z;
+            var position = text.transform.position;
+            text.transform.position = new Vector3(position.x, position.y, anchorDepth);
+        }
+    }
 
     [PatchPrefix(typeof(ObjectiveOverlay), nameof(ObjectiveOverlay.UpdateOverlay))]
     private static bool UpdateOverlay(ObjectiveOverlay __instance, MissionPosition.PositionResult result)
