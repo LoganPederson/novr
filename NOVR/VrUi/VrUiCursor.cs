@@ -163,6 +163,11 @@ public class VrUiCursor: NOVRBehaviour
 
     public bool IsHandModeActive => _handModeActive;
 
+    // Whether the pointer's button (mouse button, trigger or pinch) is held this frame, and the ray it points along,
+    // for things that follow a press themselves, like dragging a floating panel or panning the map.
+    public bool IsPointerDown { get; private set; }
+    public Ray PointerRay => _lastProbeRay;
+
     // Start of the current pointer ray, for drawing the laser from a hand.
     public Vector3 RayOrigin => _controllerOrigin;
 
@@ -204,6 +209,7 @@ public class VrUiCursor: NOVRBehaviour
 
     private void Update()
     {
+        IsPointerDown = false;
         if (!Application.isFocused)
         {
             if (_cursor != null && _cursor.activeSelf)
@@ -278,7 +284,7 @@ public class VrUiCursor: NOVRBehaviour
                 string branch = (useHands && handAvailable) ? "HANDS" : (useController && controllerAvailable) ? "CONTROLLER" : "MOUSE";
                 string cursorPosStr = (_cursor != null) ? _cursor.transform.position.ToString() : "<null>";
                 string cursorActiveStr = (_cursor != null) ? _cursor.activeSelf.ToString() : "<null>";
-                string msg = $"[VrUiCursor] mode='{modeSetting}' runtime={_runtimeMode} ctrlAvail={controllerAvailable} branch={branch} ctrlPos={_controllerOrigin} cursorPos={cursorPosStr} cursorActive={cursorActiveStr} trigger={_triggerIsPressed} _hasActiveCanvas={_hasActiveCanvas}";
+                string msg = $"[VrUiCursor] mode='{modeSetting}' runtime={_runtimeMode} ctrlAvail={controllerAvailable} handAvail={handAvailable} branch={branch} ctrlPos={_controllerOrigin} cursorPos={cursorPosStr} cursorActive={cursorActiveStr} trigger={_triggerIsPressed} _hasActiveCanvas={_hasActiveCanvas} canvas={_lastCanvasName}";
                 if (NOVRPlugin.LogSource != null) NOVRPlugin.LogSource.LogMessage(msg);
                 else Debug.Log(msg);
             }
@@ -290,6 +296,7 @@ public class VrUiCursor: NOVRBehaviour
             _controllerModeActive = true;
             _handModeActive = handRay;
             _triggerWasPressed = _triggerIsPressed && !_triggerWasPressed;
+            IsPointerDown = _triggerIsPressed;
 
             // Use trigger was-pressed tracking for animation
             bool triggerDownThisFrame = handRay
@@ -360,6 +367,7 @@ public class VrUiCursor: NOVRBehaviour
                 FirePointerEvents(screenPoint, realMouse.leftButton.isPressed);
             }
 
+            IsPointerDown = realMouse.leftButton.isPressed;
             UpdateCursorAnimation(realMouse.leftButton.wasPressedThisFrame, realMouse.leftButton.isPressed);
 
             if (realMouse.leftButton.wasPressedThisFrame)
@@ -918,7 +926,19 @@ public class VrUiCursor: NOVRBehaviour
         LayerHelper.SetLayerRecursive(_cursor.transform, LayerHelper.GetVrUiLayer());
     }
 
-    
+    // The cursor keeps the same apparent size wherever it lands: menus sit about 3 m away, but in flight the HUD
+    // canvas is 1000 m out, where a cursor sized for menus was a few centimeters wide and could not be seen.
+    private const float CursorReferenceDistance = 3f;
+    private float _cursorVisualScale = 1f;
+
+    private float GetCursorDistanceScale()
+    {
+        var camera = UiCamera;
+        if (_cursor == null || camera == null) return 1f;
+        var distance = Vector3.Distance(camera.transform.position, _cursor.transform.position);
+        return Mathf.Clamp(distance / CursorReferenceDistance, 0.1f, 1000f);
+    }
+
     private void UpdateCursorAnimation(bool wasPressed, bool isPressed)
     {
         if (_cursor == null || _cursorImage == null) return;
@@ -944,8 +964,8 @@ public class VrUiCursor: NOVRBehaviour
             targetVisualScale *= CursorPressedScale;
         }
 
-        var targetScale = Vector3.one * (CursorCanvasScale * targetVisualScale);
-        _cursor.transform.localScale = Vector3.Lerp(_cursor.transform.localScale, targetScale, Time.unscaledDeltaTime * CursorAnimationLerpSpeed);
+        _cursorVisualScale = Mathf.Lerp(_cursorVisualScale, targetVisualScale, Time.unscaledDeltaTime * CursorAnimationLerpSpeed);
+        _cursor.transform.localScale = Vector3.one * (CursorCanvasScale * _cursorVisualScale * GetCursorDistanceScale());
 
         var targetColor = CursorNormalColor;
         if (_cursorOverInteractive)
@@ -1004,6 +1024,7 @@ public class VrUiCursor: NOVRBehaviour
     public void ForwardMapClickIfNeeded()
     {
         if (_activeCanvas == null || !_hasActiveCanvas) return;
+        if (TryOpenMapFromMinimap()) return;
         if (_activeCanvas.name != "MapCanvas") return;
 
         var dynamicMap = Object.FindObjectOfType<global::DynamicMap>();
@@ -1085,6 +1106,31 @@ public class VrUiCursor: NOVRBehaviour
     }
 
     private const float AirbaseSpawnPriorityRadiusMultiplier = 3f;
+
+    // In flight the only map is the small one on the HUD, which the game never makes clickable (its cursor is
+    // hidden then). Clicking it opens the full map, so a pilot on a HOTAS can raise a hand, pinch the minimap and
+    // get straight to the clickable map. The HUD and the map are drawn on the same plane, so this tests the
+    // minimap's rectangle rather than which of the two canvases won the hit test.
+    private bool TryOpenMapFromMinimap()
+    {
+        if (global::DynamicMap.mapMaximized || !global::DynamicMap.AllowedToOpen) return false;
+        var config = ModConfiguration.Instance;
+        if (config == null || !config.OpenMapFromMinimap.Value || config.HudMinimapOpacity.Value < 0.05f) return false;
+
+        var dynamicMap = global::SceneSingleton<global::DynamicMap>.i;
+        if (dynamicMap == null || !dynamicMap.gameObject.activeInHierarchy) return false;
+
+        var mapCanvas = dynamicMap.GetComponentInParent<Canvas>();
+        if (mapCanvas == null || _activeCanvas == null || _activeCanvas.rootCanvas != mapCanvas.rootCanvas) return false;
+
+        var camera = UiCamera;
+        if (camera == null || dynamicMap.transform is not RectTransform mapRect) return false;
+        if (!RectTransformUtility.RectangleContainsScreenPoint(mapRect, GetScreenPoint(), camera)) return false;
+
+        dynamicMap.Maximize();
+        _suppressNextPointerClick = true;
+        return true;
+    }
 
     private static bool IsChoosingSpawn()
     {

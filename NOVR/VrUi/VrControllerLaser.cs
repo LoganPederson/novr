@@ -9,6 +9,7 @@ namespace NOVR.VrUi
         private static readonly Color LaserColor = new Color32(0, 255, 200, 180);
         private const float LaserWidth = 0.002f;
         private const float LaserMaxDistance = 50f;
+        private const float FarTargetLaserLength = 4f;
 
         private static int _instanceCount;
         private int _instanceId;
@@ -92,12 +93,20 @@ namespace NOVR.VrUi
             float distance = Vector3.Distance(controllerPos, cursorPos);
 
             bool wasEnabled = _lineRenderer.enabled;
-            if (distance > LaserMaxDistance || distance < 0.01f)
+            if (distance < 0.01f)
             {
                 if (wasEnabled && verbose)
                     Debug.Log($"[VrControllerLaser] Laser disabled instance={_instanceId}: distance={distance:F3} outside valid range");
                 _lineRenderer.enabled = false;
                 return;
+            }
+
+            // In flight the cursor can be on the HUD 1000 m away; draw the beam's first stretch toward it (it fades
+            // out anyway) instead of hiding it.
+            if (distance > LaserMaxDistance)
+            {
+                cursorPos = controllerPos + (cursorPos - controllerPos) * (FarTargetLaserLength / distance);
+                distance = FarTargetLaserLength;
             }
 
             _lineRenderer.enabled = true;

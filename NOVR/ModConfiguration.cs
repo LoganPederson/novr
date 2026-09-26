@@ -37,6 +37,7 @@ public class ModConfiguration
     public readonly ConfigEntry<float> HudInfoPanelScale;
     public readonly ConfigEntry<float> HudInfoPanelSpread;
     public readonly ConfigEntry<bool> ShowEnemyTypeOnHover;
+    public readonly ConfigEntry<bool> OpenMapFromMinimap;
 
     private readonly Dictionary<string, (ConfigEntry<float> Forward, ConfigEntry<float> Right)> _perPlaneEntries = new();
 
@@ -215,6 +216,13 @@ public class ModConfiguration
                 "How far the same info panels sit from the center of the HUD. Lower values pull them toward the center, " +
                 "which helps on headsets with a narrower field of view.",
                 new AcceptableValueRange<float>(0.5f, 1.5f)));
+
+        OpenMapFromMinimap = config.Bind(
+            "Map",
+            "Open Map From Minimap",
+            true,
+            "In flight, clicking the small map on the HUD (point a raised hand at it and pinch, or use a controller) opens the full, clickable map. " +
+            "Close it again with the game's map key.");
 
         SavePositionTrigger.SettingChanged += (_, _) =>
         {
