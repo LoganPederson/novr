@@ -1,11 +1,14 @@
-﻿namespace NOVR.VrTogglers;
+﻿using NOVR.Diagnostics;
+
+namespace NOVR.VrTogglers;
 
 public class VrTogglerManager
 {
     private VrToggler _toggler;
-    
+
     public VrTogglerManager()
     {
+        PerformanceMonitor.EnsureCreated();
         SetUpToggler();
         _toggler?.SetVrEnabled(true);
     }
