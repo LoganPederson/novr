@@ -244,17 +244,56 @@ namespace NOVR.VrUi
 
             if (candidates.Count == 0) return false;
 
-            candidates.Sort((a, b) => a.distance.CompareTo(b.distance));
+            // Registration order breaks exact distance ties, so the result doesn't depend on List.Sort's
+            // (unstable) ordering.
+            candidates.Sort((a, b) =>
+            {
+                var byDistance = a.distance.CompareTo(b.distance);
+                return byDistance != 0
+                    ? byDistance
+                    : _registeredCanvases.IndexOf(a.canvas).CompareTo(_registeredCanvases.IndexOf(b.canvas));
+            });
 
             // 1. Walk closest-first; skip planes with no graphic so the cursor passes
-            //    through to interactive content behind.
-            foreach (var (dist, canvas, worldPt, localPt) in candidates)
+            //    through to interactive content behind. Canvases on the same plane (the spawn screen's
+            //    GameplayUICanvas and the full map both sit at 3 m) are compared as a group, so a button beats
+            //    the map surface next to it (InfernoSuperNova/novr#40).
+            for (var groupStart = 0; groupStart < candidates.Count;)
             {
-                if (HasGraphicAtPoint(canvas, localPt))
+                var groupDistance = candidates[groupStart].distance;
+                var groupEnd = groupStart;
+                while (groupEnd < candidates.Count &&
+                       candidates[groupEnd].distance <= groupDistance + SamePlaneTolerance(groupDistance))
                 {
-                    hit = new CanvasHit(canvas, worldPt, localPt, dist, true);
+                    groupEnd++;
+                }
+
+                var bestIndex = -1;
+                var bestKind = GraphicHitKind.None;
+                var bestOrder = int.MinValue;
+                for (var index = groupStart; index < groupEnd; index++)
+                {
+                    var candidate = candidates[index];
+                    var kind = GetGraphicHitKind(candidate.canvas, candidate.localPoint);
+                    if (kind == GraphicHitKind.None) continue;
+
+                    var order = GetEffectiveSortingOrder(candidate.canvas);
+                    if (bestIndex < 0 || kind > bestKind || (kind == bestKind && order > bestOrder))
+                    {
+                        bestIndex = index;
+                        bestKind = kind;
+                        bestOrder = order;
+                    }
+                }
+
+                if (bestIndex >= 0)
+                {
+                    var best = candidates[bestIndex];
+                    hit = new CanvasHit(best.canvas, best.worldPoint, best.localPoint, best.distance, true);
                     return true;
                 }
+
+                groupStart = groupEnd;
             }
 
             // 2. Sticky fallback: prefer the previous frame's active canvas if still
@@ -288,6 +327,45 @@ namespace NOVR.VrUi
             var first = candidates[0];
             hit = new CanvasHit(first.canvas, first.worldPoint, first.localPoint, first.distance, false);
             return true;
+        }
+
+        // What the topmost graphic under a point is, from least to most wanted when canvases share a plane: an
+        // ordinary graphic, a surface NOVR made hittable itself (the map, which the game leaves unhittable and
+        // clicks through coordinate math), or something that takes clicks. Among equals the higher sorting order
+        // wins, as it would in the game's own event system.
+        private enum GraphicHitKind { None, Plain, Surface, Interactive }
+
+        private static readonly HashSet<Graphic> _surfaceGraphics = new();
+
+        /// <summary>
+        /// Marks a graphic that NOVR made a raycast target only so the cursor can find a surface (the game
+        /// doesn't hit-test it), so a real control on another canvas at the same distance wins over it.
+        /// </summary>
+        public static void RegisterSurfaceGraphic(Graphic graphic)
+        {
+            if (graphic != null) _surfaceGraphics.Add(graphic);
+        }
+
+        private static float SamePlaneTolerance(float distance) => 0.001f + distance * 0.0001f;
+
+        private static int GetEffectiveSortingOrder(Canvas canvas)
+        {
+            if (canvas.isRootCanvas || canvas.overrideSorting) return canvas.sortingOrder;
+            return canvas.rootCanvas != null ? canvas.rootCanvas.sortingOrder : canvas.sortingOrder;
+        }
+
+        private static GraphicHitKind GetGraphicHitKind(Canvas canvas, Vector2 localPoint)
+        {
+            if (!HasGraphicAtPoint(canvas, localPoint)) return GraphicHitKind.None;
+
+            var top = _graphicResults[0].gameObject;
+            if (top == null) return GraphicHitKind.Plain;
+            if (top.TryGetComponent<Graphic>(out var graphic) && _surfaceGraphics.Contains(graphic))
+                return GraphicHitKind.Surface;
+            if (ExecuteEvents.GetEventHandler<IPointerClickHandler>(top) != null ||
+                ExecuteEvents.GetEventHandler<IPointerDownHandler>(top) != null)
+                return GraphicHitKind.Interactive;
+            return GraphicHitKind.Plain;
         }
 
         private static bool HasGraphicAtPoint(Canvas canvas, Vector2 localPoint)
